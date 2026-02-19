@@ -1,0 +1,56 @@
+🚀 Project Brief: Returns (리턴즈)
+"세상의 모든 소중한 것들을 위한 통합 실종/분실 관리 플랫폼"
+
+1. 프로젝트 비전 및 타겟
+핵심 가치: 파편화된 실종(사람, 반려동물) 및 분실(물건) 데이터를 하나로 통합하고, AI 매칭과 하이퍼로컬 커뮤니티를 통해 회수율을 극대화함.
+
+초기 타겟: 반려동물 및 고가 귀중품 소유자.
+
+킬러 기능: AI 자동 태깅 시스템, 실시간 지능형 매칭, 원클릭 실종 전단지(PDF/카드뉴스) 생성기.
+
+2. 기술 스택 (Tech Stack)
+Frontend: React Native (Expo) - iOS/Android 통합 빌드.
+
+Backend: Firebase (Firestore, Storage, Auth, Cloud Functions).
+
+AI Vision: Google Cloud Vision API (이미지 분석 및 태깅).
+
+Maps: Google Maps SDK (위치 기반 핀 표시 및 수색 범위 설정).
+
+3. 핵심 데이터 구조 (Data Model - Firestore)
+Users: UID, 프로필, 신뢰도 점수, Push 토큰.
+
+Posts:
+
+type: LOST / FOUND
+
+category: HUMAN / PET / ITEM
+
+metadata: AI가 추출한 태그(색상, 품종, 브랜드 등), 이미지 URL.
+
+location: Geopoint (위도/경도), 주소 문자열.
+
+status: ACTIVE / RESOLVED.
+
+Matches: 두 게시물 간의 accuracy(일치 확률), 상태 관리.
+
+4. 주요 기능 요구사항 (Development Tasks)
+AI 스마트 신고: 카메라 연동 및 Vision API를 통한 자동 카테고리 분류.
+
+하이브리드 맵 피드: 지도 위에 실시간 분실/습득 현황 표시 (Marker 기반).
+
+전단지 자동 생성 엔진: 게시물 데이터를 템플릿에 주입하여 PDF 및 공유용 이미지 생성.
+
+로컬 알림 시스템: 게시물 등록 시 반경 5km 이내 사용자에게 긴급 푸시 발송.
+
+5. UI/UX 가이드라인
+심플함: 당황한 사용자를 위해 입력을 최소화하고 사진 위주로 구성.
+
+신뢰감: 화이트/블루/포인트 레드 컬러 사용. 본인 인증 배지 노출.
+
+🔗 개발 참조 가이드
+🏛️ ERD 설계: User(1) -> Post(N), Match(N:M) 구조.
+
+🛡️ 보안 규칙: Firestore Security Rules를 통해 작성자만 게시물 수정 가능하도록 설정.
+
+⚠️ 비용 최적화: 이미지 업로드 시 클라이언트 측 압축(WebP) 및 Vision API 호출 최적화 필수.
