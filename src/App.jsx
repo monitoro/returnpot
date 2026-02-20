@@ -1,13 +1,19 @@
-import React, { useState } from 'react'
-import { Map, Search, PlusCircle, Bell, User, MapPin, Grid, MessageCircle, Settings, MessageSquare, Zap, ShieldCheck, Award } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Map, Search, PlusCircle, Bell, User, MapPin, Grid, MessageCircle, Settings, MessageSquare, Zap, ShieldCheck, Award, Edit3, LogOut } from 'lucide-react'
 import NewPostForm from './components/NewPostForm'
 import CommunityBoard from './components/CommunityBoard'
 import ChatRoom from './components/ChatRoom'
 import NeighborhoodSettings from './components/NeighborhoodSettings'
-
+import ProfilePage from './components/ProfilePage'
+import MapView from './components/MapView'
+import LoginScreen from './components/LoginScreen'
+import { useAuth } from './contexts/AuthContext'
 import { postService } from './services/postService'
+import { storageService } from './services/storageService'
+
 
 function App() {
+    const { user, profile, loading, error, isAuthenticated, isAnonymous, signInAnonymous, signInWithGoogle, signOut } = useAuth();
     const [mainView, setMainView] = useState('feed') // 'feed', 'community', 'map', 'profile'
     const [view, setView] = useState('list') // 'list' or 'map'
     const [showForm, setShowForm] = useState(false)
@@ -16,82 +22,126 @@ function App() {
     const [myTown, setMyTown] = useState('역삼1동')
     const [categoryFilter, setCategoryFilter] = useState('ALL')
 
-    const [posts, setPosts] = useState([
-        {
-            id: 1,
-            type: 'LOST',
-            category: 'HUMAN',
-            title: '70대 어르신을 찾습니다 (긴급)',
-            location: '서울시 강남구 역삼역 인근',
-            time: '15분 전',
-            imageUrl: 'https://images.unsplash.com/photo-1552058544-f2b08422138a?auto=format&fit=crop&w=800&q=80',
-            tags: ['기억장애', '회색셔츠', '강남구'],
-            urgent: true,
-            authorAngelLevel: 9,
-            aiMatchFound: true
-        },
-        {
-            id: 2,
-            type: 'LOST',
-            category: 'PET',
-            title: '골든 리트리버를 찾습니다',
-            location: '서울시 강남구 역삼동',
-            time: '2시간 전',
-            imageUrl: 'https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&w=800&q=80',
-            tags: ['노란색', '대형견', '친근함'],
-            authorAngelLevel: 3
-        },
-        {
-            id: 3,
-            type: 'FOUND',
-            category: 'ITEM',
-            title: '갈색 가죽 지갑 습득',
-            location: '서울시 서초구 서초동',
-            time: '5시간 전',
-            imageUrl: 'https://images.unsplash.com/photo-1627123424574-724758594e93?auto=format&fit=crop&w=800&q=80',
-            tags: ['브랜드미상', '반지갑'],
-            authorAngelLevel: 12,
-            aiMatchFound: false
-        }
-    ])
+    // Firestore Data
+    const [posts, setPosts] = useState([])
+    const [loadingPosts, setLoadingPosts] = useState(true)
 
-    // Firebase 실시간 구독
-    React.useEffect(() => {
-        // 환경 변수가 설정된 경우에만 Firebase 연동
-        if (import.meta.env.VITE_FIREBASE_API_KEY && import.meta.env.VITE_FIREBASE_API_KEY !== 'YOUR_API_KEY') {
-            const unsubscribe = postService.subscribePosts((newPosts) => {
-                if (newPosts.length > 0) {
-                    setPosts(newPosts);
-                }
-            }, categoryFilter);
-            return () => unsubscribe();
+    // 날짜시간 포맷 함수
+    const formatDateTime = (dateInput) => {
+        if (!dateInput) return '';
+        const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+        if (isNaN(date.getTime())) return typeof dateInput === 'string' ? dateInput : '';
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMin = Math.floor(diffMs / 60000);
+        if (diffMin < 1) return '방금 전';
+        if (diffMin < 60) return `${diffMin}분 전`;
+        const diffHour = Math.floor(diffMin / 60);
+        if (diffHour < 24) return `${diffHour}시간 전`;
+        const month = date.getMonth() + 1;
+        const day = date.getDate();
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        if (date.getFullYear() === now.getFullYear()) {
+            return `${month}/${day} ${hours}:${minutes}`;
         }
+        return `${date.getFullYear()}.${month}.${day} ${hours}:${minutes}`;
+    };
+
+    // 실시간 포스트 구독
+    useEffect(() => {
+        setLoadingPosts(true);
+        const unsubscribe = postService.subscribePosts((newPosts) => {
+            setPosts(newPosts);
+            setLoadingPosts(false);
+        }, { category: categoryFilter });
+
+        return () => unsubscribe();
     }, [categoryFilter]);
 
     const filteredPosts = posts.filter(p => categoryFilter === 'ALL' || p.category === categoryFilter);
 
     const handleCreatePost = async (newPost) => {
-        const postToSave = {
-            ...newPost,
-            authorAngelLevel: 1,
-            aiMatchFound: Math.random() > 0.5, // 데모용 랜덤 매칭
-            imageUrl: newPost.image || 'https://via.placeholder.com/400x300?text=No+Image'
+        if (!user) {
+            alert("로그인이 필요합니다.");
+            return;
         }
 
-        // Firebase 연동
-        if (import.meta.env.VITE_FIREBASE_API_KEY && import.meta.env.VITE_FIREBASE_API_KEY !== 'YOUR_API_KEY') {
-            try {
-                await postService.createPost(postToSave);
-            } catch (error) {
-                console.error("Firebase 저장 실패, 로컬 상태만 업데이트합니다.", error);
-                setPosts([{ ...postToSave, id: Date.now(), time: '방금 전' }, ...posts]);
+        try {
+            let uploadedImageUrl = null;
+
+            // 이미지 업로드 (파일이 있는 경우)
+            if (newPost.imageFile) {
+                try {
+                    uploadedImageUrl = await storageService.uploadImage(newPost.imageFile, 'posts');
+                } catch (imgErr) {
+                    console.error("이미지 업로드 실패:", imgErr);
+                    // 이미지 실패해도 게시물은 등록 진행
+                }
             }
-        } else {
-            // Mock 모드
-            setPosts([{ ...postToSave, id: Date.now(), time: '방금 전' }, ...posts]);
-        }
 
-        setShowForm(false)
+            const postToSave = {
+                type: newPost.type || 'LOST',
+                category: newPost.category || 'PET',
+                title: newPost.title || '',
+                description: newPost.description || '',
+                location: newPost.location || '',
+                tags: newPost.tags || [],
+                urgent: newPost.urgent || false,
+                uid: user.uid,
+                authorNickname: profile?.nickname || '익명',
+                imageUrl: uploadedImageUrl || null,
+                lat: 37.5007 + (Math.random() - 0.5) * 0.01,
+                lng: 127.0365 + (Math.random() - 0.5) * 0.01,
+                views: 0,
+                likes: 0,
+                comments: 0
+            };
+
+            await postService.createPost(postToSave);
+            setShowForm(false);
+            alert("새로운 제보가 등록되었습니다!");
+            setMainView('feed');
+            window.scrollTo(0, 0);
+        } catch (error) {
+            console.error("게시물 등록 실패:", error);
+            alert("게시물 등록에 실패했습니다: " + error.message);
+        }
+    }
+
+    // 로딩 중 스플래시
+    if (loading) {
+        return (
+            <div style={{
+                minHeight: '100vh', display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                background: 'linear-gradient(180deg, #0052CC 0%, #1976D2 100%)',
+                color: 'white', gap: '16px'
+            }}>
+                <div style={{
+                    width: '60px', height: '60px', borderRadius: '50%',
+                    padding: '8px',
+                    backgroundColor: 'rgba(255,255,255,0.2)',
+                    display: 'flex', justifyContent: 'center', alignItems: 'center'
+                }}>
+                    <img src="/logo.png" alt="Logo" style={{ width: '100%', height: '100%', borderRadius: '50%' }} />
+                </div>
+                <span style={{ fontSize: '24px', fontWeight: '900', letterSpacing: '-1px' }}>ReturnPot</span>
+                <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+            </div>
+        );
+    }
+
+    // 미인증 → 로그인 화면
+    if (!isAuthenticated) {
+        return (
+            <LoginScreen
+                onAnonymousLogin={signInAnonymous}
+                onGoogleLogin={signInWithGoogle}
+                loading={loading}
+                error={error}
+            />
+        );
     }
 
     return (
@@ -110,7 +160,10 @@ function App() {
                 borderBottom: '1px solid var(--border)'
             }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h1 style={{ fontSize: '24px', fontWeight: '950', color: 'var(--primary)', letterSpacing: '-1px' }}>RETURNS</h1>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <img src="/logo.png" alt="Logo" style={{ width: '32px', height: '32px', borderRadius: '8px' }} />
+                        <h1 style={{ fontSize: '24px', fontWeight: '950', color: 'var(--primary)', letterSpacing: '-1px' }}>ReturnPot</h1>
+                    </div>
                     <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
                         <Search size={22} color="var(--text)" />
                         <div style={{ position: 'relative' }}>
@@ -132,7 +185,7 @@ function App() {
             </header>
 
             {/* Main Content */}
-            <main style={{ minHeight: 'calc(100vh - 140px)' }}>
+            <main style={{ minHeight: 'calc(100vh - 140px)', paddingBottom: '80px' }}>
                 {mainView === 'feed' && (
                     <section>
                         {/* Category Filter Chips */}
@@ -178,7 +231,7 @@ function App() {
                             </div>
 
                             {/* List View */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                 {filteredPosts.map(post => (
                                     <div key={post.id} className="premium-card" style={{
                                         overflow: 'hidden',
@@ -195,81 +248,79 @@ function App() {
                                                 right: 0,
                                                 backgroundColor: 'var(--secondary)',
                                                 color: 'white',
-                                                padding: '6px 12px',
+                                                padding: '4px 12px',
                                                 zIndex: 10,
                                                 display: 'flex',
                                                 alignItems: 'center',
-                                                gap: '8px',
-                                                fontSize: '12px',
+                                                gap: '6px',
+                                                fontSize: '11px',
                                                 fontWeight: '900'
                                             }}>
-                                                <Zap size={14} fill="currentColor" />
-                                                골든 타임 수색 모드 활성화 (반경 3km 알림 발송됨)
+                                                <Zap size={12} fill="currentColor" />
+                                                골든 타임 수색 모드 (반경 3km 알림 발송)
                                             </div>
                                         )}
 
                                         <div style={{ position: 'relative' }}>
-                                            <img src={post.imageUrl} alt={post.title} style={{ width: '100%', height: '220px', objectFit: 'cover', marginTop: post.urgent ? '30px' : '0' }} />
+                                            <img src={post.imageUrl} alt={post.title} style={{ width: '100%', height: '160px', objectFit: 'cover', marginTop: post.urgent ? '26px' : '0' }} />
 
                                             {/* AI Matching Status Badge */}
                                             {post.aiMatchChecking && (
-                                                <div className="glass" style={{ position: 'absolute', bottom: '12px', left: '12px', padding: '6px 12px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: '800', color: 'var(--primary)' }}>
+                                                <div className="glass" style={{ position: 'absolute', bottom: '8px', left: '8px', padding: '4px 10px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontWeight: '800', color: 'var(--primary)' }}>
                                                     <div className="loader-small"></div> AI 매칭 분석 중...
                                                 </div>
                                             )}
                                             {post.aiMatchFound && (
-                                                <div style={{ position: 'absolute', bottom: '12px', left: '12px', backgroundColor: 'var(--primary)', color: 'white', padding: '6px 14px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: '900', boxShadow: '0 4px 10px rgba(0, 82, 204, 0.4)' }}>
-                                                    <ShieldCheck size={14} /> AI 지능형 매칭 발견!
+                                                <div style={{ position: 'absolute', bottom: '8px', left: '8px', backgroundColor: 'var(--primary)', color: 'white', padding: '4px 10px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontWeight: '900', boxShadow: '0 3px 8px rgba(0, 82, 204, 0.4)' }}>
+                                                    <ShieldCheck size={12} /> AI 매칭 발견
                                                 </div>
                                             )}
                                         </div>
 
-                                        <div style={{ padding: '16px' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                                                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                        <div style={{ padding: '12px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                                <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                                                     <span style={{
                                                         backgroundColor: post.type === 'LOST' ? 'var(--secondary)' : '#4CAF50',
                                                         color: 'white',
-                                                        padding: '2px 8px',
+                                                        padding: '2px 6px',
                                                         borderRadius: '4px',
-                                                        fontSize: '11px',
+                                                        fontSize: '10px',
                                                         fontWeight: 'bold'
                                                     }}>
                                                         {post.type === 'LOST' ? '분실/실종' : '습득/보호'}
                                                     </span>
-
-                                                    {/* Returns Angel Level Badge */}
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '3px', backgroundColor: '#FFF9C4', color: '#FBC02D', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '900', border: '1px solid #FDD835' }}>
-                                                        <Award size={12} /> Angel Lvl.{post.authorAngelLevel}
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: '#FFF9C4', color: '#FBC02D', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '900', border: '1px solid #FDD835' }}>
+                                                        <Award size={10} /> Lv.{post.authorAngelLevel}
                                                     </div>
                                                 </div>
-                                                <span style={{ color: 'var(--text-light)', fontSize: '12px' }}>{post.time}</span>
+                                                <span style={{ color: 'var(--text-light)', fontSize: '11px' }}>{formatDateTime(post.createdAt || post.time)}</span>
                                             </div>
 
-                                            <h3 style={{ fontSize: '17px', fontWeight: '800', marginBottom: '6px', lineHeight: '1.4' }}>{post.title}</h3>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-light)', fontSize: '14px', marginBottom: '12px' }}>
-                                                <MapPin size={14} /> {post.location}
+                                            <h3 style={{ fontSize: '15px', fontWeight: '800', marginBottom: '4px', lineHeight: '1.3' }}>{post.title}</h3>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '3px', color: 'var(--text-light)', fontSize: '12px', marginBottom: '8px' }}>
+                                                <MapPin size={12} /> {post.location}
                                             </div>
 
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                <div style={{ display: 'flex', gap: '6px' }}>
                                                     {post.tags.slice(0, 3).map(tag => (
-                                                        <span key={tag} style={{ color: 'var(--primary)', fontSize: '12px', fontWeight: '600' }}>#{tag}</span>
+                                                        <span key={tag} style={{ color: 'var(--primary)', fontSize: '11px', fontWeight: '600' }}>#{tag}</span>
                                                     ))}
                                                 </div>
                                                 <button
                                                     onClick={() => setShowChat(post)}
                                                     className="btn btn-primary"
                                                     style={{
-                                                        padding: '8px 16px',
+                                                        padding: '6px 12px',
                                                         display: 'flex',
                                                         alignItems: 'center',
-                                                        gap: '6px',
-                                                        fontSize: '13px',
-                                                        boxShadow: '0 4px 8px rgba(0, 82, 204, 0.2)'
+                                                        gap: '4px',
+                                                        fontSize: '12px',
+                                                        boxShadow: '0 2px 6px rgba(0, 82, 204, 0.2)'
                                                     }}
                                                 >
-                                                    <MessageSquare size={16} /> 제보하기
+                                                    <MessageSquare size={14} /> 제보
                                                 </button>
                                             </div>
                                         </div>
@@ -280,13 +331,26 @@ function App() {
                     </section>
                 )}
 
+                {mainView === 'map' && (
+                    <MapView posts={filteredPosts} formatDateTime={formatDateTime} />
+                )}
+
                 {mainView === 'community' && (
                     <section>
                         <div style={{ padding: '24px 20px 8px 20px' }}>
                             <h2 style={{ fontSize: '24px', fontWeight: '900', letterSpacing: '-0.5px' }}>커뮤니티 광장</h2>
                             <p style={{ color: 'var(--text-light)', fontSize: '14px', marginTop: '4px' }}><strong>{myTown}</strong> 이웃들과 정보를 나누세요.</p>
                         </div>
-                        <CommunityBoard />
+                        <CommunityBoard formatDateTime={formatDateTime} />
+                    </section>
+                )}
+
+                {mainView === 'profile' && (
+                    <section>
+                        <div style={{ padding: '20px 20px 4px 20px' }}>
+                            <h2 style={{ fontSize: '24px', fontWeight: '900', letterSpacing: '-0.5px' }}>내 정보</h2>
+                        </div>
+                        <ProfilePage myTown={myTown} />
                     </section>
                 )}
             </main>
@@ -298,12 +362,12 @@ function App() {
                     position: 'fixed',
                     bottom: '100px',
                     right: '24px',
-                    width: '60px',
-                    height: '60px',
-                    borderRadius: '30px',
+                    width: '56px',
+                    height: '56px',
+                    borderRadius: '28px',
                     backgroundColor: 'var(--primary)',
                     color: 'white',
-                    display: 'flex',
+                    display: mainView === 'feed' ? 'flex' : 'none',
                     justifyContent: 'center',
                     alignItems: 'center',
                     boxShadow: '0 6px 16px rgba(0, 82, 204, 0.3)',
@@ -312,7 +376,7 @@ function App() {
                     zIndex: 500
                 }}
             >
-                <PlusCircle size={32} />
+                <PlusCircle size={28} />
             </button>
 
             {/* Bottom Nav */}

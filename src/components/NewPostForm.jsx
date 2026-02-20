@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Camera, X, MapPin, Tag, ChevronRight, Check, Zap } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Camera, X, MapPin, Tag, ChevronRight, Check, Zap, FileText, Share2, Copy, Download, ExternalLink, MessageCircle } from 'lucide-react';
 
 const NewPostForm = ({ onBack, onSubmit }) => {
     const [formData, setFormData] = useState({
@@ -9,17 +9,27 @@ const NewPostForm = ({ onBack, onSubmit }) => {
         description: '',
         location: '',
         image: null,
-        tags: []
+        tags: [],
+        // 전단지용 추가 필드
+        petName: '',
+        breed: '',
+        features: '',
+        reward: '',
+        contactPhone: ''
     });
 
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [showFlyerModal, setShowFlyerModal] = useState(false);
+    const [linkCopied, setLinkCopied] = useState(false);
+    const flyerRef = useRef(null);
 
     const handleImageUpload = (e) => {
         const file = e.target.files[0];
         if (file) {
             const reader = new FileReader();
             reader.onloadend = () => {
-                setFormData({ ...formData, image: reader.result });
+                // 미리보기용(image)와 업로드용(imageFile)을 분리 저장
+                setFormData({ ...formData, image: reader.result, imageFile: file });
                 analyzeImage();
             };
             reader.readAsDataURL(file);
@@ -46,6 +56,412 @@ const NewPostForm = ({ onBack, onSubmit }) => {
             setIsAnalyzing(false);
         }, 2000);
     };
+
+    const handleCopyLink = () => {
+        const shareUrl = `https://returnpot.kr/post/share-preview`;
+        navigator.clipboard.writeText(shareUrl).then(() => {
+            setLinkCopied(true);
+            setTimeout(() => setLinkCopied(false), 2000);
+        }).catch(() => {
+            setLinkCopied(true);
+            setTimeout(() => setLinkCopied(false), 2000);
+        });
+    };
+
+    const handleSocialShare = (platform) => {
+        const shareUrl = encodeURIComponent(`https://returnpot.kr/post/share-preview`);
+        const shareText = encodeURIComponent(formData.title || '실종/분실 신고가 등록되었습니다. 도움을 주세요!');
+        let url = '';
+        switch (platform) {
+            case 'kakao':
+                url = `https://story.kakao.com/share?url=${shareUrl}`;
+                break;
+            case 'facebook':
+                url = `https://www.facebook.com/sharer/sharer.php?u=${shareUrl}`;
+                break;
+            case 'twitter':
+                url = `https://twitter.com/intent/tweet?text=${shareText}&url=${shareUrl}`;
+                break;
+            default:
+                return;
+        }
+        window.open(url, '_blank', 'width=600,height=400');
+    };
+
+    const handleDownloadFlyer = () => {
+        if (!flyerRef.current) return;
+
+        const W = 600;
+        const PAD = 50; // 좌우 패딩
+        const contentW = W - PAD * 2; // 실제 컨텐츠 폭
+
+        // === 1단계: 높이 계산 ===
+        let calcY = 0;
+        calcY += 45;   // 상단 마진 + 로고
+        calcY += 55;   // 메인 타이틀
+        calcY += 35;   // 서브 배지
+        calcY += 300;  // 사진 영역 (패딩 포함)
+        calcY += 20;   // 사진-테이블 간격
+        calcY += 5 * 40 + 4; // 테이블 5행 (각 40px)
+        calcY += 24;   // 테이블-사례금 간격
+        if (formData.reward) {
+            calcY += 48;   // 사례금 박스
+            calcY += 24;   // Reward 영문
+        }
+        if (formData.contactPhone) {
+            calcY += 12;   // 간격
+            calcY += 44;   // 연락처 박스
+        }
+        calcY += 24;   // 간격
+        calcY += 70;   // QR 코드 영역
+        calcY += 20;   // 하단 마진
+
+        const H = Math.max(820, calcY);
+        const canvas = document.createElement('canvas');
+        canvas.width = W;
+        canvas.height = H;
+        const ctx = canvas.getContext('2d');
+
+        // === 배경 + 외곽선 ===
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = '#d0d0d0';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+
+        let y = 0;
+
+        // ──────────────────────────────
+        // 로고 영역
+        // ──────────────────────────────
+        y += 32;
+        const logoBoxSize = 22;
+        const logoTotalW = logoBoxSize + 8 + 130; // 박스 + 간격 + 텍스트
+        const logoStartX = (W - logoTotalW) / 2;
+
+        ctx.fillStyle = '#2D2D2D';
+        roundRect(ctx, logoStartX, y - 2, logoBoxSize, logoBoxSize, 4);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('R', logoStartX + logoBoxSize / 2, y + 13);
+
+        ctx.fillStyle = '#333333';
+        ctx.font = '600 13px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('리턴팟 (Returnpot)', logoStartX + logoBoxSize + 8, y + 13);
+
+        y += 36; // 로고 하단
+
+        // ──────────────────────────────
+        // 메인 타이틀
+        // ──────────────────────────────
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#1a1a1a';
+        ctx.font = 'bold 32px sans-serif';
+        const mainTitle = formData.type === 'LOST'
+            ? (formData.category === 'HUMAN' ? '실종자를 찾습니다' : formData.category === 'PET' ? '실종 동물 찾습니다' : '분실물을 찾습니다')
+            : '발견 신고';
+        ctx.fillText(mainTitle, W / 2, y + 28);
+        y += 48;
+
+        // ──────────────────────────────
+        // LOST PET 배지
+        // ──────────────────────────────
+        ctx.font = 'bold 14px sans-serif';
+        const badgeText = formData.category === 'HUMAN' ? 'MISSING PERSON' : formData.category === 'PET' ? 'LOST PET' : 'LOST ITEM';
+        const badgeTextW = ctx.measureText(badgeText).width;
+        const badgePadX = 24;
+        const badgeH = 28;
+        const badgeTotalW = badgeTextW + badgePadX * 2;
+
+        ctx.fillStyle = '#F5A623';
+        roundRect(ctx, W / 2 - badgeTotalW / 2, y, badgeTotalW, badgeH, 4);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(badgeText, W / 2, y + 19);
+        y += badgeH + 16;
+
+        // ──────────────────────────────
+        // 사진 (노란 테두리)
+        // ──────────────────────────────
+        const photoW = 220;
+        const photoH = 240;
+        const photoBorder = 5;
+        const photoX = W / 2 - photoW / 2;
+        const photoY = y;
+
+        // 노란 테두리 배경
+        ctx.fillStyle = '#F5A623';
+        roundRect(ctx, photoX - photoBorder, photoY - photoBorder,
+            photoW + photoBorder * 2, photoH + photoBorder * 2, 10);
+        ctx.fill();
+
+        // 사진 배경 (회색)
+        ctx.fillStyle = '#f5f5f5';
+        roundRect(ctx, photoX, photoY, photoW, photoH, 6);
+        ctx.fill();
+
+        if (!formData.image) {
+            ctx.fillStyle = '#bbb';
+            ctx.font = '15px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('사진을 등록해주세요', W / 2, photoY + photoH / 2 + 5);
+        }
+
+        // 🐾 장식
+        if (formData.category === 'PET') {
+            const pawX = photoX + photoW + photoBorder + 2;
+            const pawY = photoY - photoBorder - 2;
+            ctx.fillStyle = '#F5A623';
+            ctx.beginPath();
+            ctx.arc(pawX, pawY, 14, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.font = '13px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('🐾', pawX, pawY + 4);
+        }
+
+        y = photoY + photoH + photoBorder + 20;
+
+        // ──────────────────────────────
+        // 정보 테이블
+        // ──────────────────────────────
+        const tblX = PAD;
+        const tblW = contentW;
+        const lblW = 90;
+        const rH = 38;
+        const tblBorderR = 6;
+        const rows = [
+            { label: '이름', value: formData.petName || formData.title || '-' },
+            { label: formData.category === 'HUMAN' ? '인상착의' : formData.category === 'PET' ? '견종/종류' : '품목', value: formData.breed || '-' },
+            { label: '특징', value: formData.features || formData.description?.slice(0, 30) || '-' },
+            { label: '실종 장소', value: formData.location || '-' },
+            { label: '실종 일시', value: new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }) },
+        ];
+        const tblH = rH * rows.length;
+
+        // 1) 먼저 각 행의 라벨 배경을 채우기
+        rows.forEach((row, i) => {
+            const rY = y + i * rH;
+            ctx.fillStyle = '#FFF8E7';
+            ctx.fillRect(tblX + 1, rY + (i === 0 ? 1 : 0), lblW - 1,
+                rH - (i === 0 ? 1 : 0) - (i === rows.length - 1 ? 1 : 0));
+        });
+
+        // 2) 행 구분선 (얇은 연한 노란색)
+        ctx.strokeStyle = '#F5DFA0';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < rows.length - 1; i++) {
+            const lineY = y + (i + 1) * rH;
+            ctx.beginPath();
+            ctx.moveTo(tblX + 1, lineY + 0.5);
+            ctx.lineTo(tblX + tblW - 1, lineY + 0.5);
+            ctx.stroke();
+        }
+
+        // 3) 라벨-값 세로 구분선
+        ctx.beginPath();
+        ctx.moveTo(tblX + lblW + 0.5, y + 1);
+        ctx.lineTo(tblX + lblW + 0.5, y + tblH - 1);
+        ctx.stroke();
+
+        // 4) 외곽 테두리 (마지막에 그려서 일관된 굵기)
+        ctx.strokeStyle = '#F5A623';
+        ctx.lineWidth = 2;
+        roundRect(ctx, tblX, y, tblW, tblH, tblBorderR);
+        ctx.stroke();
+
+        // 5) 텍스트
+        rows.forEach((row, i) => {
+            const rY = y + i * rH;
+            // 라벨
+            ctx.fillStyle = '#8B6914';
+            ctx.font = 'bold 13px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(row.label, tblX + 14, rY + rH / 2 + 5);
+
+            // 값
+            ctx.fillStyle = '#222';
+            ctx.font = '600 13px sans-serif';
+            const maxValW = tblW - lblW - 28;
+            let valText = row.value;
+            while (ctx.measureText(valText).width > maxValW && valText.length > 1) {
+                valText = valText.slice(0, -1);
+            }
+            if (valText !== row.value) valText += '…';
+            ctx.fillText(valText, tblX + lblW + 14, rY + rH / 2 + 5);
+        });
+
+        y += tblH + 20;
+
+        // ──────────────────────────────
+        // 사례금
+        // ──────────────────────────────
+        if (formData.reward) {
+            const rewardBoxH = 44;
+
+            // 박스 배경 + 테두리
+            ctx.fillStyle = '#FFF8E1';
+            roundRect(ctx, tblX, y, tblW, rewardBoxH, 8);
+            ctx.fill();
+            ctx.strokeStyle = '#F5A623';
+            ctx.lineWidth = 2;
+            roundRect(ctx, tblX, y, tblW, rewardBoxH, 8);
+            ctx.stroke();
+
+            // 사례금 라벨
+            ctx.fillStyle = '#8B6914';
+            ctx.font = 'bold 14px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText('사례금:', tblX + 16, y + rewardBoxH / 2 + 5);
+
+            // 금액 (빨간색, 우측 정렬)
+            ctx.fillStyle = '#E74C3C';
+            ctx.font = 'bold 18px sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(formData.reward, tblX + tblW - 16, y + rewardBoxH / 2 + 6);
+
+            y += rewardBoxH + 6;
+
+            // Reward 영문 텍스트
+            ctx.fillStyle = '#D4A017';
+            ctx.font = 'italic 11px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`(Reward: ₩${formData.reward})`, W / 2, y + 10);
+
+            y += 24;
+        }
+
+        // ──────────────────────────────
+        // 연락처
+        // ──────────────────────────────
+        if (formData.contactPhone) {
+            const contactBoxH = 40;
+
+            ctx.fillStyle = '#EFF6FF';
+            roundRect(ctx, tblX, y, tblW, contactBoxH, 8);
+            ctx.fill();
+            ctx.strokeStyle = '#B8D4F0';
+            ctx.lineWidth = 1.5;
+            roundRect(ctx, tblX, y, tblW, contactBoxH, 8);
+            ctx.stroke();
+
+            ctx.fillStyle = '#0052cc';
+            ctx.font = 'bold 15px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`📞 연락처: ${formData.contactPhone}`, W / 2, y + contactBoxH / 2 + 5);
+
+            y += contactBoxH + 16;
+        }
+
+        // ──────────────────────────────
+        // QR 코드
+        // ──────────────────────────────
+        // 항상 하단에 배치 (최소 위치 보장)
+        y = Math.max(y + 8, H - 78);
+
+        // 구분선
+        ctx.strokeStyle = '#e5e5e5';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(PAD, y);
+        ctx.lineTo(W - PAD, y);
+        ctx.stroke();
+        y += 14;
+
+        // QR 코드 시뮬레이션 (7x7 격자)
+        const qrX = PAD;
+        const qrSize = 50;
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(qrX, y, qrSize, qrSize);
+
+        const gridCells = 7;
+        const gridCellSize = (qrSize - 6) / gridCells;
+        for (let r = 0; r < gridCells; r++) {
+            for (let c = 0; c < gridCells; c++) {
+                const isCorner = (r < 3 && c < 3) || (r < 3 && c > 3) || (r > 3 && c < 3);
+                const isCenter = r === 3 && c === 3;
+                if (isCorner || isCenter || ((r * 7 + c) % 3 === 0)) {
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(qrX + 3 + c * gridCellSize, y + 3 + r * gridCellSize,
+                        gridCellSize - 1, gridCellSize - 1);
+                }
+            }
+        }
+
+        // QR 옆 텍스트
+        const qrTextX = qrX + qrSize + 16;
+        ctx.fillStyle = '#1a1a1a';
+        ctx.font = 'bold 14px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('스캔하여 제보하기', qrTextX, y + 16);
+        ctx.fillStyle = '#999';
+        ctx.font = '12px sans-serif';
+        ctx.fillText('Scan to Report', qrTextX, y + 32);
+        ctx.fillStyle = '#0052cc';
+        ctx.font = '600 11px sans-serif';
+        ctx.fillText('returnpot.kr', qrTextX, y + 48);
+
+        // ──────────────────────────────
+        // 이미지 그리기 & 다운로드
+        // ──────────────────────────────
+        const doDownload = () => {
+            const link = document.createElement('a');
+            link.download = 'returnpot-flyer.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        };
+
+        if (formData.image) {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+                ctx.save();
+                roundRect(ctx, photoX, photoY, photoW, photoH, 6);
+                ctx.clip();
+                // object-fit: cover 방식
+                const imgR = img.width / img.height;
+                const boxR = photoW / photoH;
+                let sx = 0, sy = 0, sw = img.width, sh = img.height;
+                if (imgR > boxR) {
+                    sw = img.height * boxR;
+                    sx = (img.width - sw) / 2;
+                } else {
+                    sh = img.width / boxR;
+                    sy = (img.height - sh) / 2;
+                }
+                ctx.drawImage(img, sx, sy, sw, sh, photoX, photoY, photoW, photoH);
+                ctx.restore();
+                doDownload();
+            };
+            img.src = formData.image;
+        } else {
+            doDownload();
+        }
+    };
+
+    // ── Canvas 헬퍼 함수 ──
+    function roundRect(ctx, x, y, w, h, r) {
+        if (r > h / 2) r = h / 2;
+        if (r > w / 2) r = w / 2;
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.arcTo(x + w, y, x + w, y + r, r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+        ctx.lineTo(x + r, y + h);
+        ctx.arcTo(x, y + h, x, y + h - r, r);
+        ctx.lineTo(x, y + r);
+        ctx.arcTo(x, y, x + r, y, r);
+        ctx.closePath();
+    }
 
     return (
         <div className="glass" style={{
@@ -263,6 +679,76 @@ const NewPostForm = ({ onBack, onSubmit }) => {
                         ></textarea>
                     </div>
 
+                    {/* 전단지용 추가 정보 */}
+                    <div style={{
+                        padding: '16px',
+                        backgroundColor: '#FFFDF5',
+                        borderRadius: '12px',
+                        border: '1px solid #F5DFA0',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                            <FileText size={16} color="#F5A623" />
+                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#B8860B' }}>전단지 추가 정보 (선택)</span>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: 'var(--text-light)' }}>이름</label>
+                                <input
+                                    type="text"
+                                    placeholder="예: 메스 (Max)"
+                                    value={formData.petName}
+                                    onChange={(e) => setFormData({ ...formData, petName: e.target.value })}
+                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '14px' }}
+                                />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: 'var(--text-light)' }}>견종/종류</label>
+                                <input
+                                    type="text"
+                                    placeholder="예: 골든 리트리버"
+                                    value={formData.breed}
+                                    onChange={(e) => setFormData({ ...formData, breed: e.target.value })}
+                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '14px' }}
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: 'var(--text-light)' }}>외형 특징</label>
+                            <input
+                                type="text"
+                                placeholder="예: 안순맘, 파운드컬러 중얼"
+                                value={formData.features}
+                                onChange={(e) => setFormData({ ...formData, features: e.target.value })}
+                                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '14px' }}
+                            />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: 'var(--text-light)' }}>사례금</label>
+                                <input
+                                    type="text"
+                                    placeholder="예: 100만원"
+                                    value={formData.reward}
+                                    onChange={(e) => setFormData({ ...formData, reward: e.target.value })}
+                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '14px' }}
+                                />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: 'var(--text-light)' }}>연락처</label>
+                                <input
+                                    type="text"
+                                    placeholder="010-0000-0000"
+                                    value={formData.contactPhone}
+                                    onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value })}
+                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '14px' }}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Killer Feature: Golden Time Toggle */}
                     <div style={{
                         marginTop: '8px',
@@ -307,6 +793,169 @@ const NewPostForm = ({ onBack, onSubmit }) => {
                     </div>
                 </div>
 
+                {/* 전단지 제작 섹션 */}
+                <div style={{
+                    marginTop: '16px',
+                    padding: '16px',
+                    backgroundColor: '#F0F7FF',
+                    borderRadius: '12px',
+                    border: '1px solid #CCE0FF'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                        <FileText size={20} color="var(--primary)" />
+                        <div>
+                            <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--primary)' }}>전단지 제작</div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-light)' }}>등록 정보로 전단지를 자동 생성합니다</div>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => setShowFlyerModal(true)}
+                        className="btn"
+                        style={{
+                            width: '100%',
+                            padding: '12px',
+                            backgroundColor: 'var(--primary)',
+                            color: 'white',
+                            borderRadius: '10px',
+                            fontWeight: '700',
+                            fontSize: '14px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            border: 'none',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        <FileText size={16} />
+                        전단지 미리보기 & 다운로드
+                        <ChevronRight size={16} />
+                    </button>
+                </div>
+
+                {/* 소셜 공유 섹션 */}
+                <div style={{
+                    marginTop: '16px',
+                    padding: '16px',
+                    backgroundColor: '#FAFBFC',
+                    borderRadius: '12px',
+                    border: '1px solid var(--border)'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                        <Share2 size={20} color="var(--text)" />
+                        <div>
+                            <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text)' }}>소셜 공유</div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-light)' }}>더 많은 사람에게 알려 도움을 받으세요</div>
+                        </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+                        {/* 카카오톡 */}
+                        <button
+                            onClick={() => handleSocialShare('kakao')}
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '12px 4px',
+                                borderRadius: '12px',
+                                border: '1px solid #FAE100',
+                                backgroundColor: '#FEF9CD',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            <div style={{
+                                width: '36px', height: '36px', borderRadius: '10px',
+                                backgroundColor: '#FAE100', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}>
+                                <MessageCircle size={18} color="#3C1E1E" />
+                            </div>
+                            <span style={{ fontSize: '11px', fontWeight: '600', color: '#3C1E1E' }}>카카오톡</span>
+                        </button>
+
+                        {/* 페이스북 */}
+                        <button
+                            onClick={() => handleSocialShare('facebook')}
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '12px 4px',
+                                borderRadius: '12px',
+                                border: '1px solid #D4DFEF',
+                                backgroundColor: '#EBF0F9',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            <div style={{
+                                width: '36px', height: '36px', borderRadius: '10px',
+                                backgroundColor: '#1877F2', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}>
+                                <span style={{ color: 'white', fontWeight: '900', fontSize: '18px' }}>f</span>
+                            </div>
+                            <span style={{ fontSize: '11px', fontWeight: '600', color: '#1877F2' }}>페이스북</span>
+                        </button>
+
+                        {/* X (트위터) */}
+                        <button
+                            onClick={() => handleSocialShare('twitter')}
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '12px 4px',
+                                borderRadius: '12px',
+                                border: '1px solid #D5D5D5',
+                                backgroundColor: '#F5F5F5',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            <div style={{
+                                width: '36px', height: '36px', borderRadius: '10px',
+                                backgroundColor: '#000000', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}>
+                                <span style={{ color: 'white', fontWeight: '900', fontSize: '16px' }}>𝕏</span>
+                            </div>
+                            <span style={{ fontSize: '11px', fontWeight: '600', color: '#000' }}>X</span>
+                        </button>
+
+                        {/* 링크 복사 */}
+                        <button
+                            onClick={handleCopyLink}
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '12px 4px',
+                                borderRadius: '12px',
+                                border: linkCopied ? '1px solid #4CAF50' : '1px solid var(--border)',
+                                backgroundColor: linkCopied ? '#E8F5E9' : '#FAFBFC',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            <div style={{
+                                width: '36px', height: '36px', borderRadius: '10px',
+                                backgroundColor: linkCopied ? '#4CAF50' : '#6B778C',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                transition: 'all 0.2s'
+                            }}>
+                                {linkCopied ? <Check size={18} color="white" /> : <Copy size={18} color="white" />}
+                            </div>
+                            <span style={{ fontSize: '11px', fontWeight: '600', color: linkCopied ? '#4CAF50' : '#6B778C' }}>
+                                {linkCopied ? '복사됨!' : '링크복사'}
+                            </span>
+                        </button>
+                    </div>
+                </div>
+
                 {/* Submit Button */}
                 <button
                     onClick={() => onSubmit(formData)}
@@ -316,6 +965,314 @@ const NewPostForm = ({ onBack, onSubmit }) => {
                     등록 완료
                 </button>
             </div>
+
+            {/* 전단지 미리보기 모달 */}
+            {showFlyerModal && (
+                <div style={{
+                    position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)',
+                    zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: '20px', animation: 'fadeIn 0.2s ease'
+                }}>
+                    <div style={{
+                        backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '400px',
+                        maxHeight: '90vh', overflowY: 'auto', position: 'relative'
+                    }}>
+                        {/* 모달 헤더 */}
+                        <div style={{
+                            padding: '16px 20px', borderBottom: '1px solid var(--border)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            position: 'sticky', top: 0, backgroundColor: 'white', borderRadius: '16px 16px 0 0', zIndex: 1
+                        }}>
+                            <h3 style={{ fontSize: '16px', fontWeight: '800' }}>📋 전단지 미리보기</h3>
+                            <button onClick={() => setShowFlyerModal(false)} style={{
+                                border: 'none', background: 'none', cursor: 'pointer', padding: '4px'
+                            }}>
+                                <X size={22} color="#666" />
+                            </button>
+                        </div>
+
+                        {/* 전단지 미리보기 - 참고 이미지 스타일 */}
+                        <div ref={flyerRef} style={{ padding: '16px' }}>
+                            <div style={{
+                                backgroundColor: '#ffffff',
+                                border: '1px solid #e0e0e0',
+                                borderRadius: '4px',
+                                overflow: 'hidden',
+                                boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+                                fontFamily: "'Noto Sans KR', 'Inter', sans-serif"
+                            }}>
+                                {/* === 로고 영역 === */}
+                                <div style={{
+                                    padding: '14px 20px 8px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px'
+                                }}>
+                                    <div style={{
+                                        width: '28px', height: '28px', borderRadius: '6px',
+                                        backgroundColor: '#2D2D2D', display: 'flex',
+                                        alignItems: 'center', justifyContent: 'center',
+                                        color: 'white', fontWeight: '900', fontSize: '14px'
+                                    }}>R</div>
+                                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#333', letterSpacing: '-0.3px' }}>
+                                        리턴팟 <span style={{ color: '#999', fontWeight: '400' }}>(Returnpot)</span>
+                                    </span>
+                                </div>
+
+                                {/* === 메인 타이틀 === */}
+                                <div style={{ textAlign: 'center', padding: '4px 20px 6px' }}>
+                                    <div style={{
+                                        fontSize: '26px', fontWeight: '900', color: '#1a1a1a',
+                                        letterSpacing: '-0.5px', lineHeight: '1.3'
+                                    }}>
+                                        {formData.type === 'LOST'
+                                            ? (formData.category === 'HUMAN' ? '실종자를 찾습니다' : formData.category === 'PET' ? '실종 동물 찾습니다' : '분실물을 찾습니다')
+                                            : '발견 신고'
+                                        }
+                                    </div>
+                                    <div style={{
+                                        display: 'inline-block',
+                                        backgroundColor: '#F5A623',
+                                        color: 'white',
+                                        padding: '3px 16px',
+                                        borderRadius: '4px',
+                                        fontSize: '13px',
+                                        fontWeight: '800',
+                                        letterSpacing: '2px',
+                                        marginTop: '6px'
+                                    }}>
+                                        {formData.category === 'HUMAN' ? 'MISSING PERSON' : formData.category === 'PET' ? 'LOST PET' : 'LOST ITEM'}
+                                    </div>
+                                </div>
+
+                                {/* === 사진 영역 (노란 테두리) === */}
+                                <div style={{
+                                    padding: '12px 30px 14px',
+                                    display: 'flex',
+                                    justifyContent: 'center'
+                                }}>
+                                    <div style={{
+                                        width: '65%',
+                                        aspectRatio: '3/4',
+                                        border: '4px solid #F5A623',
+                                        borderRadius: '8px',
+                                        overflow: 'hidden',
+                                        position: 'relative',
+                                        backgroundColor: '#f8f8f8'
+                                    }}>
+                                        {formData.image ? (
+                                            <img src={formData.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        ) : (
+                                            <div style={{
+                                                width: '100%', height: '100%',
+                                                display: 'flex', flexDirection: 'column',
+                                                alignItems: 'center', justifyContent: 'center',
+                                                color: '#ccc'
+                                            }}>
+                                                <Camera size={36} />
+                                                <div style={{ fontSize: '12px', marginTop: '8px', color: '#bbb' }}>사진을 등록해주세요</div>
+                                            </div>
+                                        )}
+                                        {/* 🐾 발바닥 아이콘 장식 */}
+                                        {formData.category === 'PET' && (
+                                            <div style={{
+                                                position: 'absolute', top: '-6px', right: '-6px',
+                                                width: '28px', height: '28px', borderRadius: '50%',
+                                                backgroundColor: '#F5A623', display: 'flex',
+                                                alignItems: 'center', justifyContent: 'center',
+                                                fontSize: '14px', boxShadow: '0 2px 6px rgba(245,166,35,0.4)'
+                                            }}>🐾</div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* === 정보 테이블 === */}
+                                <div style={{ padding: '0 20px 12px' }}>
+                                    <div style={{
+                                        border: '2px solid #F5A623',
+                                        borderRadius: '8px',
+                                        overflow: 'hidden'
+                                    }}>
+                                        {[
+                                            { label: '이름', value: formData.petName || formData.title || '-' },
+                                            { label: formData.category === 'HUMAN' ? '인상착의' : formData.category === 'PET' ? '견종/종류' : '품목', value: formData.breed || '-' },
+                                            { label: '특징', value: formData.features || formData.description?.slice(0, 40) || '-' },
+                                            { label: '실종 장소', value: formData.location || '-' },
+                                            { label: '실종 일시', value: new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }) },
+                                        ].map((row, i) => (
+                                            <div key={i} style={{
+                                                display: 'flex',
+                                                borderBottom: i < 4 ? '1px solid #F5DFA0' : 'none',
+                                                fontSize: '12px'
+                                            }}>
+                                                <div style={{
+                                                    width: '80px', minWidth: '80px',
+                                                    padding: '8px 10px',
+                                                    backgroundColor: '#FFF8E7',
+                                                    fontWeight: '700',
+                                                    color: '#8B6914',
+                                                    borderRight: '1px solid #F5DFA0',
+                                                    display: 'flex', alignItems: 'center'
+                                                }}>
+                                                    {row.label}
+                                                </div>
+                                                <div style={{
+                                                    flex: 1, padding: '8px 10px',
+                                                    color: '#333',
+                                                    fontWeight: '600',
+                                                    display: 'flex', alignItems: 'center',
+                                                    wordBreak: 'break-all'
+                                                }}>
+                                                    {row.value}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* === 사례금 영역 === */}
+                                {formData.reward && (
+                                    <div style={{ padding: '0 20px 12px' }}>
+                                        <div style={{
+                                            backgroundColor: '#FFF8E1',
+                                            border: '2px solid #F5A623',
+                                            borderRadius: '8px',
+                                            padding: '12px 16px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between'
+                                        }}>
+                                            <div style={{ fontSize: '13px', fontWeight: '700', color: '#8B6914' }}>사례금:</div>
+                                            <div style={{ fontSize: '16px', fontWeight: '900', color: '#D4850A' }}>
+                                                소중히 사례하겠습니다 <span style={{ color: '#E74C3C' }}>{formData.reward}</span>
+                                            </div>
+                                        </div>
+                                        <div style={{ textAlign: 'center', marginTop: '4px' }}>
+                                            <span style={{ fontSize: '11px', fontWeight: '700', color: '#F5A623', fontStyle: 'italic' }}>
+                                                (Reward: ₩{formData.reward})
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* === 연락처 === */}
+                                {formData.contactPhone && (
+                                    <div style={{ padding: '0 20px 12px', textAlign: 'center' }}>
+                                        <div style={{
+                                            backgroundColor: '#F0F7FF',
+                                            border: '1px solid #CCE0FF',
+                                            borderRadius: '8px',
+                                            padding: '10px',
+                                            fontSize: '14px',
+                                            fontWeight: '800',
+                                            color: '#0052cc'
+                                        }}>
+                                            📞 연락처: {formData.contactPhone}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* === QR 코드 + 하단 === */}
+                                <div style={{
+                                    padding: '12px 20px 16px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '12px',
+                                    borderTop: '1px solid #eee'
+                                }}>
+                                    {/* QR 코드 (SVG 시뮬레이션) */}
+                                    <div style={{
+                                        width: '64px', height: '64px', minWidth: '64px',
+                                        border: '2px solid #333',
+                                        borderRadius: '4px',
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(7, 1fr)',
+                                        gridTemplateRows: 'repeat(7, 1fr)',
+                                        gap: '1px',
+                                        padding: '4px',
+                                        backgroundColor: 'white'
+                                    }}>
+                                        {Array.from({ length: 49 }).map((_, i) => {
+                                            const row = Math.floor(i / 7);
+                                            const col = i % 7;
+                                            const isCorner = (row < 3 && col < 3) || (row < 3 && col > 3) || (row > 3 && col < 3);
+                                            const isCenter = row === 3 && col === 3;
+                                            const isPattern = isCorner || isCenter || (i % 3 === 0);
+                                            return (
+                                                <div key={i} style={{
+                                                    backgroundColor: isPattern ? '#333' : '#fff',
+                                                    borderRadius: '0.5px'
+                                                }} />
+                                            );
+                                        })}
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontSize: '13px', fontWeight: '800', color: '#1a1a1a', marginBottom: '2px' }}>
+                                            스캔하여 제보하기
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: '#999', fontWeight: '500' }}>
+                                            Scan to Report
+                                        </div>
+                                        <div style={{ fontSize: '10px', color: '#0052cc', fontWeight: '600', marginTop: '4px' }}>
+                                            returnpot.kr
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 모달 액션 버튼 */}
+                        <div style={{
+                            padding: '16px 20px 24px',
+                            display: 'flex', gap: '8px'
+                        }}>
+                            <button
+                                onClick={handleDownloadFlyer}
+                                className="btn"
+                                style={{
+                                    flex: 1, padding: '12px',
+                                    backgroundColor: 'var(--primary)', color: 'white',
+                                    borderRadius: '12px', fontWeight: '700', fontSize: '13px',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                    border: 'none', cursor: 'pointer'
+                                }}
+                            >
+                                <Download size={16} />
+                                이미지 저장
+                            </button>
+                            <button
+                                onClick={handleCopyLink}
+                                className="btn"
+                                style={{
+                                    flex: 1, padding: '12px',
+                                    backgroundColor: '#E8F4FD', color: '#0052CC',
+                                    borderRadius: '12px', fontWeight: '700', fontSize: '13px',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                    border: 'none', cursor: 'pointer'
+                                }}
+                            >
+                                <Share2 size={16} />
+                                공유하기
+                            </button>
+                            <button
+                                onClick={() => setShowFlyerModal(false)}
+                                className="btn"
+                                style={{
+                                    flex: 1, padding: '12px',
+                                    backgroundColor: '#F0F2F5', color: 'var(--text)',
+                                    borderRadius: '12px', fontWeight: '700', fontSize: '13px',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                    border: 'none', cursor: 'pointer'
+                                }}
+                            >
+                                <X size={16} />
+                                닫기
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <style>{`
         .loader {
@@ -330,6 +1287,10 @@ const NewPostForm = ({ onBack, onSubmit }) => {
         @keyframes rotation {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
         }
       `}</style>
         </div>

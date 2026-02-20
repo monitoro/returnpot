@@ -1,59 +1,172 @@
-# 리턴즈(Returns) 구현 계획서
+# 📋 리턴즈 (Returns) — 실제 구현 및 배포 계획서
 
-## 1. 개요
-이 계획서는 '리턴즈 사이트 개발 계획서'를 바탕으로 한 웹 앱 서비스의 상세 구현 단계입니다. 파편화된 실종/분실 데이터를 통합하고 AI 매칭 및 위치 기반 서비스를 제공합니다.
+## 📊 현재 상태 요약
 
-## 2. 디자인 가이드라인 (Premium Aesthetics)
-- **컬러 팔레트**: 
-    - 메인: `#0052CC` (신뢰감을 주는 블루)
-    - 강조: `#FF4D4D` (긴급함을 나타내는 포인트 레드)
-    - 배경: `#FAFBFC` (깨끗한 화이트)
-- **타이포그래피**: Google Fonts (Inter 또는 Roboto)를 사용하여 가독성 극대화.
-- **스타일**: 글래스모피즘(Glassmorphism) 효과와 부드러운 그림자를 활용한 프리미엄 UI.
+### ✅ UI 구현 완료
+| 탭 | 컴포넌트 | 상태 |
+|---|---|:---:|
+| 피드 | App.jsx (feed) | ✅ Mock 데이터 |
+| 지도 | MapView.jsx | ✅ Leaflet CDN + Mock 마커 |
+| 커뮤니티 | CommunityBoard.jsx | ✅ Mock 데이터, 글쓰기 모달 |
+| 정보 | ProfilePage.jsx | ✅ Mock 데이터 (레벨/뱃지/직함) |
 
-## 3. 상세 단계별 계획
+### ✅ 인프라 구축 완료
+- Firebase 프로젝트: `returnpot-ce52f`
+- Firestore, Storage, Auth 초기화됨
+- `.env` 설정 완료
 
-### 단계 1: 프로젝트 기초 구축
-- **기술 스택**: Vite, React, Vanilla CSS.
-- **목표**: 일관된 디자인 시스템 기반을 마련하고 Firebase 연동 준비.
-- **핵심 작업**:
-    - `index.css`에 디자인 토큰(CSS 변수) 정의.
-    - 공통 레이아웃 컴포넌트(Header, BottomNav) 제작.
+### 🔴 아직 미구현 (Mock/하드코딩 상태)
+- 실제 Firestore CRUD 연동
+- 사용자 인증 (로그인/회원가입)
+- 이미지 업로드 (Firebase Storage)
+- 게시물 실시간 구독
+- 프로필/뱃지/레벨 Firestore 연동
+- 커뮤니티 게시물 Firestore 연동
+- 빌드 & 배포
 
-### 단계 2: 위치 기반 피드 및 커뮤니티 스퀘어
-- **목표**: 실종/분실 정보 공유를 넘어 하이퍼로컬 기반의 활발한 정보 교환.
-- **핵심 작업**:
-    - **커뮤니티 스퀘어**: 자유 게시판, 목격 제보, 실종 방지 팁 등 카테고리화.
-    - **실시간 소통**: 게시물별 댓글 및 응원(좋아요) 기능.
-    - **지역 기반 필터링**: 내 동네 게시글 우선 노출.
+---
 
-### 단계 3: AI 스마트 신고 및 자동 매칭
-- **목표**: 사진 한 장으로 복잡한 정보 입력을 최소화하고 매칭 자동화.
-- **핵심 작업**:
-    - 파일 업로드 UI 및 WebP 압축 클라이언트 구현.
-    - Google Cloud Vision API를 활용한 자동 태깅.
-    - **지능형 매칭**: LOST와 FOUND 데이터 간 유사도 분석 후 매칭 알림.
+## 🚀 구현 단계 (Phase)
 
-### 단계 4: 전단지 자동 생성 엔진
-- **목표**: 실종 시 가장 시급한 전단지 배포를 디지털로 자동화.
-- **핵심 작업**:
-    - HTML/CSS 템플릿을 활용한 PDF 생성 라이브러리 연동.
-    - 소셜 공유용 카드뉴스 이미지 렌더링.
+### Phase 1: 인증 시스템 🔐
+> **목표**: 사용자가 로그인/로그아웃할 수 있는 기본 인증 구현
 
-### 단계 5: Firebase 백엔드 고도화
-- **목표**: 안정적인 데이터 관리 및 실시간 매칭.
-- **핵심 작업**:
-    - Firestore 데이터 모델링 (Users, Posts, Matches).
-    - Firebase Auth 연동 (소셜 로그인 및 본인 인증 시뮬레이션).
-    - 보안 규칙(Security Rules) 적용.
+**작업 항목:**
+1. **익명 인증 + Google 인증** 구현
+   - `src/services/authService.js` 생성
+   - 익명 로그인 (첫 진입 시 자동)
+   - Google 소셜 로그인 (선택)
+2. **사용자 프로필 Firestore 연동**
+   - `users` 컬렉션 생성
+   - 닉네임, 동네, 레벨, EXP, 뱃지 저장
+3. **AuthContext 전역 상태**
+   - 로그인 상태 관리
+   - Protected Route 적용
 
-### 단계 6: 킬러 기능 (Killer Features) 고도화
-- **골든 타임 수색 모드**: 긴급 실종 발생 시 주변 사용자 총동원 및 실시간 수색 경로 지도 공유.
-- **리턴즈 엔젤 시스템**: 제보 및 해결 기여도에 따른 신뢰 등급 및 배지 부여 (Gamification).
-- **AI 지능형 자동 제보**: 게시글 업로드 시 AI가 즉시 유사 게시물을 찾아 자동 댓글 매칭.
-- **리턴 포트 (디지털 기부함)**: 사례금을 사회적 가치로 환원하는 기부 시스템 구축.
+**파일 변경:**
+- `src/services/authService.js` (신규)
+- `src/contexts/AuthContext.jsx` (신규)
+- `src/components/ProfilePage.jsx` (수정)
+- `src/App.jsx` (수정)
 
-## 4. 검증 계획
-- 모든 시나리오별 UI 반응성 체크.
-- 대용량 이미지 업로드 성능 및 압축 효율 확인.
-- 결합 매칭 알고리즘의 정확도 테스트.
+---
+
+### Phase 2: 게시물 CRUD 연동 📝
+> **목표**: 피드/커뮤니티 게시물을 Firestore에 실제 저장하고 실시간 로드
+
+**작업 항목:**
+1. **피드 게시물 (posts 컬렉션)**
+   - `postService.js` 확장: CRUD + 실시간 구독
+   - 게시물 작성 시 Firestore 저장
+   - 카테고리별 필터링 쿼리
+   - 게시물 상태 관리 (ACTIVE/RESOLVED)
+2. **커뮤니티 게시물 (community_posts 컬렉션)**
+   - `src/services/communityService.js` 생성
+   - 좋아요 (liked_by 배열 또는 서브컬렉션)
+   - 댓글 서브컬렉션
+3. **Firestore 인덱스 설정**
+   - category + createdAt 복합 인덱스
+   - community_posts용 인덱스
+
+**파일 변경:**
+- `src/services/postService.js` (수정)
+- `src/services/communityService.js` (신규)
+- `src/components/CommunityBoard.jsx` (수정)
+- `src/App.jsx` (수정)
+
+---
+
+### Phase 3: 이미지 업로드 📸
+> **목표**: 게시물에 실제 사진을 업로드하고 표시
+
+**작업 항목:**
+1. **Firebase Storage 업로드**
+   - `src/services/storageService.js` 생성
+   - 클라이언트 측 이미지 압축 (WebP 변환)
+   - 업로드 진행률 표시
+   - 최대 4장 업로드
+2. **이미지 URL Firestore 연동**
+   - 게시물에 imageUrls 배열 저장
+   - 커뮤니티 게시물에도 연동
+
+**파일 변경:**
+- `src/services/storageService.js` (신규)
+- `src/components/NewPostForm.jsx` (수정)
+- `src/components/CommunityBoard.jsx` (수정)
+
+---
+
+### Phase 4: 지도 실시간 연동 🗺️
+> **목표**: Firestore 게시물을 지도에 실시간 마커로 표시
+
+**작업 항목:**
+1. **Firestore 게시물 → 지도 마커 연동**
+   - 위치 정보가 있는 게시물만 마커 표시
+   - 실시간 업데이트
+2. **위치 정보 입력 개선**
+   - 게시물 작성 시 위치 선택 기능
+   - Geolocation API로 현재 위치 자동 입력
+3. **골든 타임 알림 UI**
+   - urgent 게시물 실시간 반영
+
+**파일 변경:**
+- `src/components/MapView.jsx` (수정)
+- `src/components/NewPostForm.jsx` (수정)
+
+---
+
+### Phase 5: 프로필 & 게임화 시스템 🏅
+> **목표**: 레벨/뱃지/직함을 실제 활동 데이터와 연동
+
+**작업 항목:**
+1. **EXP 시스템 실제 구현**
+   - 활동별 EXP 적립 로직
+   - 레벨업 자동 처리
+2. **뱃지 해금 조건 체크**
+   - 자동 뱃지 해금 로직
+3. **직함 장착 Firestore 연동**
+   - 현재 직함 저장/변경
+
+**파일 변경:**
+- `src/services/profileService.js` (신규)
+- `src/components/ProfilePage.jsx` (수정)
+
+---
+
+### Phase 6: Firestore 보안 규칙 🛡️
+> **목표**: 프로덕션 보안 규칙 설정
+
+**규칙:**
+- 인증된 사용자만 게시물 작성 가능
+- 본인 게시물만 수정/삭제 가능
+- 프로필은 본인만 수정 가능
+- 읽기는 인증된 사용자 모두 가능
+
+---
+
+### Phase 7: 빌드 & 배포 🌐
+> **목표**: Firebase Hosting으로 프로덕션 배포
+
+**작업 항목:**
+1. **빌드 최적화**
+   - `vite build` 프로덕션 빌드
+   - 불필요 패키지 제거 (react-leaflet 등)
+   - 번들 사이즈 분석
+2. **Firebase Hosting 설정**
+   - `firebase init hosting`
+   - `firebase.json` 설정 (SPA rewrite)
+   - 커스텀 도메인 (선택)
+3. **배포**
+   - `firebase deploy`
+   - 배포 URL 확인
+
+---
+
+## ⏰ 예상 작업 순서
+```
+Phase 1 (인증) → Phase 2 (게시물 CRUD) → Phase 3 (이미지)
+→ Phase 4 (지도 연동) → Phase 5 (프로필) → Phase 6 (보안) → Phase 7 (배포)
+```
+
+## 🎯 우선 즉시 실행: Phase 1 + Phase 7(배포 준비)
+인증 시스템을 먼저 구축하면서, 동시에 현재 UI만으로도 배포 가능한 상태를 만듦.
