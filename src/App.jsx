@@ -70,19 +70,18 @@ function App() {
         try {
             let uploadedImageUrl = null;
 
-            // 이미지 업로드 (파일이 있는 경우)
             if (newPost.imageFile) {
                 try {
                     uploadedImageUrl = await storageService.uploadImage(newPost.imageFile, 'posts');
                 } catch (imgErr) {
                     console.error("이미지 업로드 실패:", imgErr);
-                    // 이미지 실패해도 게시물은 등록 진행
                 }
             }
 
             const postToSave = {
                 type: newPost.type || 'LOST',
                 category: newPost.category || 'PET',
+                status: 'ACTIVE',
                 title: newPost.title || '',
                 description: newPost.description || '',
                 location: newPost.location || '',
@@ -90,19 +89,27 @@ function App() {
                 urgent: newPost.urgent || false,
                 uid: user.uid,
                 authorNickname: profile?.nickname || '익명',
+                authorAngelLevel: profile?.angelLevel || 1,
                 imageUrl: uploadedImageUrl || null,
-                lat: 37.5007 + (Math.random() - 0.5) * 0.01,
-                lng: 127.0365 + (Math.random() - 0.5) * 0.01,
+                lat: 37.5007 + (Math.random() - 0.5) * 0.02,
+                lng: 127.0365 + (Math.random() - 0.5) * 0.02,
                 views: 0,
                 likes: 0,
-                comments: 0
+                comments: 0,
+                aiMatchChecking: false,
+                aiMatchFound: false
             };
 
             await postService.createPost(postToSave);
+
             setShowForm(false);
-            alert("새로운 제보가 등록되었습니다!");
             setMainView('feed');
             window.scrollTo(0, 0);
+
+            setTimeout(() => {
+                alert("새로운 제보가 성공적으로 등록되었습니다!");
+            }, 300);
+
         } catch (error) {
             console.error("게시물 등록 실패:", error);
             alert("게시물 등록에 실패했습니다: " + error.message);
