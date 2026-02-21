@@ -310,15 +310,9 @@ function App() {
                                             </div>
 
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-<<<<<<< HEAD
-                                                <div style={{ display: 'flex', gap: '6px' }}>
-                                                    {post.tags.slice(0, 3).map(tag => (
-                                                        <span key={tag} style={{ color: 'var(--primary)', fontSize: '11px', fontWeight: '600' }}>#{tag}</span>
-=======
                                                 <div style={{ display: 'flex', gap: '8px' }}>
                                                     {(post.tags || []).slice(0, 3).map(tag => (
-                                                        <span key={tag} style={{ color: 'var(--primary)', fontSize: '12px', fontWeight: '600' }}>#{tag}</span>
->>>>>>> 23315d3 (fix: Firestore 데이터 누락(tags, imageUrl 등)으로 인한 빈 화면 렌더링 에러 해결)
+                                                        <span key={tag} style={{ color: 'var(--primary)', fontSize: '11px', fontWeight: '600' }}>#{tag}</span>
                                                     ))}
                                                 </div>
                                                 <button
