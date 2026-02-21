@@ -56,7 +56,9 @@ export const postService = {
                     id: doc.id,
                     ...data,
                     // Timestamp를 Date 객체로 변환 (UI 렌더링 용이성)
-                    createdAt: data.createdAt?.toDate() || new Date()
+                    createdAt: data.createdAt?.toDate() || new Date(),
+                    tags: data.tags || [],
+                    imageUrl: data.imageUrl || 'https://via.placeholder.com/400x300?text=No+Image'
                 };
             });
             callback(posts);
