@@ -102,8 +102,8 @@ function App() {
 
             await postService.createPost(postToSave);
 
-            // 알림을 먼저 띄운 후 사용자가 확인(OK)을 누르면 화면 전환 및 초기화 진행
-            alert("새로운 제보가 성공적으로 등록되었습니다!");
+            // 알림창 렌더링 블로킹 이슈 해결: alert 대신 즉시 화면 전환
+            console.log("새로운 제보 등록 완료:", postToSave.id);
             setShowForm(false);
             setMainView('feed');
             window.scrollTo(0, 0);
