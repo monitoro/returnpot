@@ -12,27 +12,30 @@ export const useAuth = () => {
 };
 
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(null);           // Firebase Auth user
-    const [profile, setProfile] = useState(null);      // Firestore profile
+    const [user, setUser] = useState(null);
+    const [profile, setProfile] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
     // 인증 상태 변경 감지
     useEffect(() => {
         const unsubscribe = authService.onAuthChange(async (firebaseUser) => {
-            if (firebaseUser) {
-                setUser(firebaseUser);
-                try {
-                    const userProfile = await authService.getUserProfile(firebaseUser.uid);
-                    setProfile(userProfile);
-                } catch (err) {
-                    console.error('프로필 로드 실패:', err);
+            try {
+                if (firebaseUser) {
+                    setUser(firebaseUser);
+                    try {
+                        const userProfile = await authService.getUserProfile(firebaseUser.uid);
+                        setProfile(userProfile);
+                    } catch (err) {
+                        console.error('프로필 로드 실패:', err);
+                    }
+                } else {
+                    setUser(null);
+                    setProfile(null);
                 }
-            } else {
-                setUser(null);
-                setProfile(null);
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         });
 
         return () => unsubscribe();
@@ -57,6 +60,34 @@ export const AuthProvider = ({ children }) => {
         setError(null);
         try {
             const firebaseUser = await authService.signInWithGoogle();
+            const userProfile = await authService.getUserProfile(firebaseUser.uid);
+            setProfile(userProfile);
+            return firebaseUser;
+        } catch (err) {
+            setError(err.message);
+            throw err;
+        }
+    };
+
+    // 이메일 회원가입
+    const signUpWithEmail = async (email, password, nickname) => {
+        setError(null);
+        try {
+            const firebaseUser = await authService.signUpWithEmail(email, password, nickname);
+            const userProfile = await authService.getUserProfile(firebaseUser.uid);
+            setProfile(userProfile);
+            return firebaseUser;
+        } catch (err) {
+            setError(err.message);
+            throw err;
+        }
+    };
+
+    // 이메일 로그인
+    const signInWithEmail = async (email, password) => {
+        setError(null);
+        try {
+            const firebaseUser = await authService.signInWithEmail(email, password);
             const userProfile = await authService.getUserProfile(firebaseUser.uid);
             setProfile(userProfile);
             return firebaseUser;
@@ -102,8 +133,11 @@ export const AuthProvider = ({ children }) => {
         error,
         isAuthenticated: !!user,
         isAnonymous: user?.isAnonymous ?? true,
+        isAdmin: profile?.isAdmin === true,
         signInAnonymous,
         signInWithGoogle,
+        signUpWithEmail,
+        signInWithEmail,
         signOut,
         updateProfile,
         refreshProfile

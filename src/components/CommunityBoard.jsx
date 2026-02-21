@@ -1,5 +1,7 @@
-import React, { useState, useRef } from 'react';
-import { MessageSquare, Heart, Share2, MoreHorizontal, User, Edit3, X, Send, Camera, Image, Link2, Play, ExternalLink } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { MessageSquare, Heart, Share2, MoreHorizontal, User, Edit3, X, Send, Camera, Image, Link2, Play, ExternalLink, Trash2 } from 'lucide-react';
+import { communityService } from '../services/communityService';
+import { useAuth } from '../contexts/AuthContext';
 
 // YouTube URL에서 비디오 ID 추출
 const extractYouTubeId = (url) => {
@@ -22,70 +24,74 @@ const extractUrl = (text) => {
     return match ? match[0] : null;
 };
 
-const CommunityBoard = ({ formatDateTime }) => {
+const CommunityBoard = ({ formatDateTime, isAnonymous, signOut, isAdmin }) => {
+    const { user, profile } = useAuth();
     const [activeCategory, setActiveCategory] = useState('전체');
     const [showWriteModal, setShowWriteModal] = useState(false);
     const [newPost, setNewPost] = useState({ category: '자유게시판', content: '', tags: '', images: [], linkUrl: '' });
     const fileInputRef = useRef(null);
+    // 어드민 다중선택
+    const [selectMode, setSelectMode] = useState(false);
+    const [selectedPosts, setSelectedPosts] = useState(new Set());
 
     const categories = ['전체', '자유게시판', '목격제보', '실종방지팁', '찾았어요!'];
 
-    const [posts, setPosts] = useState([
-        {
-            id: 1,
-            author: '강아지천사',
-            category: '실종방지팁',
-            content: '반려견 산책 시 하네스 버클 확인은 필수입니다! 최근에 버클이 풀려서 고생하신 분들이 많다고 하네요.\n\n관련 영상 참고하세요:\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ',
-            createdAt: new Date(Date.now() - 10 * 60000),
-            likes: 12,
-            liked: false,
-            comments: 5,
-            tags: ['산책매너', '안전'],
-            images: [],
-            linkUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
-        },
-        {
-            id: 2,
-            author: '동네주민A',
-            category: '목격제보',
-            content: '역삼동 GS25 근처에서 목줄 없는 강아지가 혼자 돌아다니는 걸 봤어요. 갈색 푸들인 것 같습니다.',
-            createdAt: new Date(Date.now() - 30 * 60000),
-            likes: 8,
-            liked: false,
-            comments: 3,
-            tags: ['역삼동', '목격'],
-            images: ['https://images.unsplash.com/photo-1587300003388-59208cc962cb?auto=format&fit=crop&w=600&q=80'],
-            linkUrl: ''
-        },
-        {
-            id: 3,
-            author: '행운의주인',
-            category: '찾았어요!',
-            content: '여러분 덕분에 저희 집 고양이를 무사히 찾았습니다! 공유해주신 모든 분들께 감사드려요 ㅠㅠ',
-            createdAt: new Date(Date.now() - 65 * 60000),
-            likes: 45,
-            liked: false,
-            comments: 12,
-            tags: ['감사합니다', '무사히'],
-            images: [
-                'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=600&q=80',
-                'https://images.unsplash.com/photo-1573865526739-10659fec78a5?auto=format&fit=crop&w=600&q=80'
-            ],
-            linkUrl: ''
-        }
-    ]);
+    // Firestore 실시간 구독
+    const [posts, setPosts] = useState([]);
+    useEffect(() => {
+        const unsubscribe = communityService.subscribePosts((newPosts) => {
+            setPosts(newPosts);
+        });
+        return () => unsubscribe();
+    }, []);
 
     const filteredPosts = activeCategory === '전체'
         ? posts
         : posts.filter(p => p.category === activeCategory);
 
-    const handleLike = (postId) => {
-        setPosts(posts.map(p => {
-            if (p.id === postId) {
-                return { ...p, liked: !p.liked, likes: p.liked ? p.likes - 1 : p.likes + 1 };
-            }
-            return p;
-        }));
+    const handleLike = async (postId) => {
+        const post = posts.find(p => p.id === postId);
+        if (!post) return;
+        try {
+            await communityService.toggleLike(postId, post.likes, post.liked);
+        } catch (err) {
+            console.error('좋아요 실패:', err);
+        }
+    };
+
+    // 개별 삭제
+    const handleDeletePost = async (postId) => {
+        if (!window.confirm('이 게시글을 삭제하시겠습니까?')) return;
+        try {
+            await communityService.deletePost(postId);
+        } catch (err) {
+            console.error('삭제 실패:', err);
+            alert('삭제에 실패했습니다.');
+        }
+    };
+
+    // 다중 삭제
+    const handleBulkDelete = async () => {
+        if (selectedPosts.size === 0) return;
+        if (!window.confirm(`${selectedPosts.size}개의 게시글을 삭제하시겠습니까?`)) return;
+        try {
+            const promises = Array.from(selectedPosts).map(id => communityService.deletePost(id));
+            await Promise.all(promises);
+            setSelectedPosts(new Set());
+            setSelectMode(false);
+        } catch (err) {
+            console.error('일괄 삭제 실패:', err);
+            alert('일부 게시글 삭제에 실패했습니다.');
+        }
+    };
+
+    const toggleSelect = (postId) => {
+        setSelectedPosts(prev => {
+            const next = new Set(prev);
+            if (next.has(postId)) next.delete(postId);
+            else next.add(postId);
+            return next;
+        });
     };
 
     // 이미지 선택
@@ -126,25 +132,25 @@ const CommunityBoard = ({ formatDateTime }) => {
         setNewPost(prev => ({ ...prev, linkUrl: url }));
     };
 
-    const handleSubmitPost = () => {
+    const handleSubmitPost = async () => {
         if (!newPost.content.trim()) return;
         const tagsArr = newPost.tags.split(',').map(t => t.trim()).filter(Boolean);
-        const post = {
-            id: Date.now(),
-            author: '나',
-            category: newPost.category,
-            content: newPost.content.trim(),
-            createdAt: new Date(),
-            likes: 0,
-            liked: false,
-            comments: 0,
-            tags: tagsArr.length > 0 ? tagsArr : ['새글'],
-            images: newPost.images,
-            linkUrl: newPost.linkUrl
-        };
-        setPosts([post, ...posts]);
-        setNewPost({ category: '자유게시판', content: '', tags: '', images: [], linkUrl: '' });
-        setShowWriteModal(false);
+        try {
+            await communityService.createPost({
+                author: profile?.nickname || '익명',
+                uid: user?.uid || null,
+                category: newPost.category,
+                content: newPost.content.trim(),
+                tags: tagsArr.length > 0 ? tagsArr : ['새글'],
+                images: newPost.images,
+                linkUrl: newPost.linkUrl
+            });
+            setNewPost({ category: '자유게시판', content: '', tags: '', images: [], linkUrl: '' });
+            setShowWriteModal(false);
+        } catch (err) {
+            console.error('글 작성 실패:', err);
+            alert('글 작성에 실패했습니다.');
+        }
     };
 
     const displayTime = (post) => {
@@ -316,10 +322,60 @@ const CommunityBoard = ({ formatDateTime }) => {
                 ))}
             </div>
 
+            {/* 어드민 선택모드 컨트롤 */}
+            {isAdmin && (
+                <div style={{
+                    display: 'flex', justifyContent: 'flex-end', padding: '0 20px 4px',
+                    gap: '8px'
+                }}>
+                    <button type="button" onClick={() => {
+                        setSelectMode(!selectMode);
+                        if (selectMode) setSelectedPosts(new Set());
+                    }} style={{
+                        padding: '4px 12px', borderRadius: '6px',
+                        border: selectMode ? '1px solid #e53935' : '1px solid #ddd',
+                        backgroundColor: selectMode ? '#FFEBEE' : 'white',
+                        color: selectMode ? '#e53935' : '#666',
+                        fontSize: '12px', fontWeight: '600', cursor: 'pointer'
+                    }}>
+                        {selectMode ? '✕ 취소' : '☑ 선택'}
+                    </button>
+                    {selectMode && (
+                        <button type="button" onClick={() => {
+                            const allIds = new Set(filteredPosts.map(p => p.id));
+                            setSelectedPosts(selectedPosts.size === filteredPosts.length ? new Set() : allIds);
+                        }} style={{
+                            padding: '4px 12px', borderRadius: '6px',
+                            border: '1px solid #ddd', backgroundColor: 'white',
+                            color: '#666', fontSize: '12px', fontWeight: '600', cursor: 'pointer'
+                        }}>
+                            {selectedPosts.size === filteredPosts.length ? '전체 해제' : '전체 선택'}
+                        </button>
+                    )}
+                </div>
+            )}
+
             {/* Post List */}
             <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {filteredPosts.map(post => (
-                    <div key={post.id} className="premium-card" style={{ padding: '14px' }}>
+                    <div key={post.id} className="premium-card" style={{
+                        padding: '14px',
+                        border: selectMode && selectedPosts.has(post.id) ? '2px solid #e53935' : undefined,
+                        position: 'relative'
+                    }}>
+                        {/* 선택모드 체크박스 */}
+                        {selectMode && (
+                            <button type="button" onClick={() => toggleSelect(post.id)} style={{
+                                position: 'absolute', top: '8px', right: '8px', zIndex: 10,
+                                width: '24px', height: '24px', borderRadius: '6px',
+                                border: selectedPosts.has(post.id) ? '2px solid #e53935' : '2px solid #ccc',
+                                backgroundColor: selectedPosts.has(post.id) ? '#e53935' : 'white',
+                                color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                cursor: 'pointer', fontSize: '14px', fontWeight: '700'
+                            }}>
+                                {selectedPosts.has(post.id) ? '✓' : ''}
+                            </button>
+                        )}
                         {/* Post Header */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -362,7 +418,14 @@ const CommunityBoard = ({ formatDateTime }) => {
                             borderTop: '1px solid var(--border)', paddingTop: '10px'
                         }}>
                             <button
-                                onClick={() => handleLike(post.id)}
+                                onClick={() => {
+                                    if (isAnonymous) {
+                                        alert("좋아요는 로그인이 필요합니다.\n로그인 화면으로 이동합니다.");
+                                        signOut();
+                                        return;
+                                    }
+                                    handleLike(post.id);
+                                }}
                                 style={{
                                     display: 'flex', alignItems: 'center', gap: '4px',
                                     backgroundColor: 'transparent', border: 'none',
@@ -387,14 +450,61 @@ const CommunityBoard = ({ formatDateTime }) => {
                             }}>
                                 <Share2 size={16} />
                             </button>
+                            {isAdmin && !selectMode && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleDeletePost(post.id)}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: '3px',
+                                        backgroundColor: '#FFEBEE', border: '1px solid #e53935',
+                                        borderRadius: '6px', color: '#e53935',
+                                        cursor: 'pointer', fontSize: '11px', fontWeight: '700',
+                                        padding: '4px 8px'
+                                    }}
+                                >
+                                    <Trash2 size={12} /> 삭제
+                                </button>
+                            )}
                         </div>
                     </div>
                 ))}
             </div>
 
+            {/* 다중 삭제 하단 바 */}
+            {selectMode && selectedPosts.size > 0 && (
+                <div style={{
+                    position: 'fixed', bottom: '70px', left: '50%', transform: 'translateX(-50%)',
+                    width: '90%', maxWidth: '440px', padding: '12px 16px',
+                    borderRadius: '14px',
+                    background: 'linear-gradient(135deg, #E53935, #C62828)',
+                    color: 'white', display: 'flex', alignItems: 'center',
+                    justifyContent: 'space-between', zIndex: 200,
+                    boxShadow: '0 6px 20px rgba(229,57,53,0.4)'
+                }}>
+                    <span style={{ fontSize: '14px', fontWeight: '700' }}>
+                        {selectedPosts.size}개 선택됨
+                    </span>
+                    <button type="button" onClick={handleBulkDelete} style={{
+                        padding: '8px 20px', borderRadius: '8px',
+                        border: '2px solid white', backgroundColor: 'rgba(255,255,255,0.15)',
+                        color: 'white', fontWeight: '800', fontSize: '13px',
+                        cursor: 'pointer'
+                    }}>
+                        🗑️ 일괄 삭제
+                    </button>
+                </div>
+            )}
+
             {/* 글쓰기 FAB */}
             <button
-                onClick={() => setShowWriteModal(true)}
+                onClick={() => {
+                    if (isAnonymous) {
+                        alert("커뮤니티 글쓰기는 로그인이 필요합니다.\n로그인 화면으로 이동합니다.");
+                        signOut();
+                    } else {
+                        setShowWriteModal(true);
+                    }
+                }}
                 style={{
                     position: 'fixed', bottom: '100px', right: '24px',
                     width: '56px', height: '56px', borderRadius: '28px',

@@ -1,42 +1,57 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, X, User, Phone, MapPin, Heart } from 'lucide-react';
+import { chatService } from '../services/chatService';
+import { useAuth } from '../contexts/AuthContext';
 
 const ChatRoom = ({ post, onBack }) => {
-    const [messages, setMessages] = useState([
-        { id: 1, sender: 'system', text: `"${post.title}" 관련 채팅방이 개설되었습니다.`, time: '오후 2:30' },
-        { id: 2, sender: '동네주민1', text: '방금 그 근처 지나가다가 비슷한 아이 본 것 같아요!', time: '오후 2:31' },
-        { id: 3, sender: 'owner', text: '정말인가요? 어느 쪽 방향으로 가고 있었나요?', time: '오후 2:32' }
-    ]);
+    const { user, profile } = useAuth();
+    const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
+    const [loading, setLoading] = useState(true);
     const scrollRef = useRef(null);
 
+    // Firestore 실시간 메시지 구독
+    useEffect(() => {
+        if (!post?.id) return;
+        setLoading(true);
+        const unsubscribe = chatService.subscribeMessages(post.id, (newMessages) => {
+            setMessages(newMessages);
+            setLoading(false);
+        });
+        return () => unsubscribe();
+    }, [post?.id]);
+
+    // 새 메시지가 오면 자동 스크롤
     useEffect(() => {
         if (scrollRef.current) {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
     }, [messages]);
 
-    const handleSend = () => {
-        if (!input.trim()) return;
-        const newMessage = {
-            id: messages.length + 1,
-            sender: 'owner',
-            text: input,
-            time: '방금 전'
-        };
-        setMessages([...messages, newMessage]);
-        setInput('');
+    const formatTime = (date) => {
+        if (!date) return '';
+        const d = date instanceof Date ? date : new Date(date);
+        const h = d.getHours();
+        const m = String(d.getMinutes()).padStart(2, '0');
+        const ampm = h >= 12 ? '오후' : '오전';
+        const h12 = h % 12 || 12;
+        return `${ampm} ${h12}:${m}`;
+    };
 
-        // Simulate auto-reply
-        setTimeout(() => {
-            const autoReply = {
-                id: messages.length + 2,
-                sender: '동네주민1',
-                text: '서초역 3번 출구 방향에서 공원 쪽으로 뛰어가고 있었어요!',
-                time: '방금 전'
-            };
-            setMessages(prev => [...prev, autoReply]);
-        }, 1500);
+    const handleSend = async () => {
+        if (!input.trim() || !user) return;
+        const text = input.trim();
+        setInput('');
+        try {
+            await chatService.sendMessage(post.id, {
+                uid: user.uid,
+                senderName: profile?.nickname || '익명',
+                text
+            });
+        } catch (err) {
+            console.error('메시지 전송 실패:', err);
+            alert('메시지 전송에 실패했습니다.');
+        }
     };
 
     return (
@@ -63,7 +78,7 @@ const ChatRoom = ({ post, onBack }) => {
                 borderBottom: '1px solid var(--border)'
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <button onClick={onBack} style={{ border: 'none', background: 'none' }}><X size={24} /></button>
+                    <button type="button" onClick={onBack} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={24} /></button>
                     <div>
                         <div style={{ fontWeight: '800', fontSize: '16px' }}>정보 교환 대화방</div>
                         <div style={{ fontSize: '12px', color: 'var(--primary)' }}>{post.title}</div>
@@ -76,7 +91,7 @@ const ChatRoom = ({ post, onBack }) => {
 
             {/* Info Card */}
             <div style={{ padding: '12px', backgroundColor: 'white', borderBottom: '1px solid var(--border)', display: 'flex', gap: '12px', alignItems: 'center' }}>
-                <img src={post.imageUrl} style={{ width: '40px', height: '40px', borderRadius: '4px', objectFit: 'cover' }} />
+                <img src={post.imageUrl} alt={post.title} style={{ width: '40px', height: '40px', borderRadius: '4px', objectFit: 'cover' }} />
                 <div style={{ flex: 1 }}>
                     <div style={{ fontSize: '13px', fontWeight: '700' }}>실시간 위치 제보 중</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-light)' }}><MapPin size={10} style={{ verticalAlign: 'middle' }} /> {post.location}</div>
@@ -101,7 +116,7 @@ const ChatRoom = ({ post, onBack }) => {
                     <Heart size={16} color="var(--secondary)" fill="var(--secondary)" />
                     <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--secondary)' }}>리턴 포트 (사례금 기부)</span>
                 </div>
-                <button style={{
+                <button type="button" style={{
                     border: '1px solid var(--secondary)',
                     backgroundColor: 'white',
                     color: 'var(--secondary)',
@@ -117,36 +132,54 @@ const ChatRoom = ({ post, onBack }) => {
 
             {/* Messages */}
             <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {messages.map(msg => (
-                    <div key={msg.id} style={{
-                        alignSelf: msg.sender === 'owner' ? 'flex-end' : (msg.sender === 'system' ? 'center' : 'flex-start'),
-                        maxWidth: msg.sender === 'system' ? '100%' : '80%'
-                    }}>
-                        {msg.sender === 'system' ? (
-                            <div style={{ fontSize: '12px', color: 'var(--text-light)', backgroundColor: '#e0e4eb', padding: '4px 12px', borderRadius: '12px' }}>
-                                {msg.text}
-                            </div>
-                        ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: msg.sender === 'owner' ? 'flex-end' : 'flex-start' }}>
-                                {msg.sender !== 'owner' && <span style={{ fontSize: '11px', color: 'var(--text-light)', marginBottom: '4px', marginLeft: '4px' }}>{msg.sender}</span>}
+                {loading && (
+                    <div style={{ textAlign: 'center', color: '#999', fontSize: '13px', padding: '40px 0' }}>
+                        메시지를 불러오는 중...
+                    </div>
+                )}
+
+                {!loading && messages.length === 0 && (
+                    <div style={{ textAlign: 'center', color: '#999', fontSize: '13px', padding: '40px 0' }}>
+                        <div style={{ fontSize: '32px', marginBottom: '8px' }}>💬</div>
+                        첫 메시지를 보내보세요!<br />
+                        <span style={{ fontSize: '11px' }}>이 게시물에 관한 정보를 공유할 수 있습니다.</span>
+                    </div>
+                )}
+
+                {messages.map(msg => {
+                    const isMe = msg.uid === user?.uid;
+                    return (
+                        <div key={msg.id} style={{
+                            alignSelf: isMe ? 'flex-end' : 'flex-start',
+                            maxWidth: '80%'
+                        }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMe ? 'flex-end' : 'flex-start' }}>
+                                {!isMe && (
+                                    <span style={{ fontSize: '11px', color: 'var(--text-light)', marginBottom: '4px', marginLeft: '4px' }}>
+                                        {msg.senderName || '익명'}
+                                    </span>
+                                )}
                                 <div style={{
-                                    backgroundColor: msg.sender === 'owner' ? 'var(--primary)' : 'white',
-                                    color: msg.sender === 'owner' ? 'white' : 'var(--text)',
+                                    backgroundColor: isMe ? 'var(--primary)' : 'white',
+                                    color: isMe ? 'white' : 'var(--text)',
                                     padding: '10px 14px',
                                     borderRadius: '16px',
-                                    borderTopRightRadius: msg.sender === 'owner' ? '2px' : '16px',
-                                    borderTopLeftRadius: msg.sender !== 'owner' ? '2px' : '16px',
+                                    borderTopRightRadius: isMe ? '2px' : '16px',
+                                    borderTopLeftRadius: isMe ? '16px' : '2px',
                                     boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
                                     fontSize: '14px',
-                                    lineHeight: '1.4'
+                                    lineHeight: '1.4',
+                                    wordBreak: 'break-word'
                                 }}>
                                     {msg.text}
                                 </div>
-                                <span style={{ fontSize: '10px', color: 'var(--text-light)', marginTop: '4px' }}>{msg.time}</span>
+                                <span style={{ fontSize: '10px', color: 'var(--text-light)', marginTop: '4px' }}>
+                                    {formatTime(msg.createdAt)}
+                                </span>
                             </div>
-                        )}
-                    </div>
-                ))}
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Input */}
@@ -156,7 +189,9 @@ const ChatRoom = ({ post, onBack }) => {
                     placeholder="메시지를 입력하세요..."
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSend();
+                    }}
                     style={{
                         flex: 1,
                         padding: '12px 16px',
@@ -166,7 +201,7 @@ const ChatRoom = ({ post, onBack }) => {
                         fontSize: '15px'
                     }}
                 />
-                <button onClick={handleSend} style={{
+                <button type="button" onClick={handleSend} style={{
                     width: '44px',
                     height: '44px',
                     borderRadius: '22px',

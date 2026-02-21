@@ -2,28 +2,63 @@ import React, { useState } from 'react';
 import {
     User, Award, Shield, Star, Zap, MapPin, Eye, Heart,
     Target, TrendingUp, ChevronRight, Lock, CheckCircle,
-    Crown, Medal, Flame, Compass, Search as SearchIcon, Clock
+    Crown, Medal, Flame, Compass, Search as SearchIcon, Clock, LogOut
 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 const ProfilePage = ({ myTown }) => {
+    const { user, profile, isAnonymous, signOut, signInWithGoogle } = useAuth();
     const [activeTab, setActiveTab] = useState('badges');
 
-    // 사용자 레벨 시스템
+    // 비로그인(익명) 사용자인 경우 로그인 유도 화면
+    if (isAnonymous) {
+        return (
+            <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+                <div style={{
+                    width: '80px', height: '80px', borderRadius: '50%', margin: '0 auto 20px',
+                    backgroundColor: '#E3F2FD',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                    <User size={36} color="var(--primary)" />
+                </div>
+                <h3 style={{ fontSize: '20px', fontWeight: '900', marginBottom: '8px' }}>로그인이 필요합니다</h3>
+                <p style={{ color: 'var(--text-light)', fontSize: '14px', marginBottom: '24px', lineHeight: '1.6' }}>
+                    로그인하면 나만의 프로필, 뱃지, 레벨 등<br />다양한 기능을 이용할 수 있습니다.
+                </p>
+                <button
+                    type="button"
+                    onClick={async () => {
+                        try { await signInWithGoogle(); } catch (e) { console.error(e); }
+                    }}
+                    style={{
+                        padding: '14px 32px', borderRadius: '12px',
+                        border: 'none', backgroundColor: 'var(--primary)',
+                        color: 'white', fontSize: '16px', fontWeight: '700',
+                        cursor: 'pointer', boxShadow: '0 4px 12px rgba(0, 82, 204, 0.3)'
+                    }}
+                >
+                    Google 로그인
+                </button>
+            </div>
+        );
+    }
+
+    // 사용자 레벨 시스템 (profile에서 실제 데이터 가져오기)
     const userProfile = {
-        nickname: '동네수호천사',
+        nickname: profile?.nickname || user?.displayName || '사용자',
         town: myTown || '역삼1동',
-        level: 7,
-        exp: 340,
-        nextLevelExp: 500,
-        angelLevel: 7,
-        totalPosts: 12,
-        totalReports: 28,
-        totalFound: 3,
-        joinDate: '2025.09.15',
-        currentTitle: 'neighborhood_guardian',
-        goldenTimeParticipation: 5,
-        communityPosts: 18,
-        likesReceived: 67
+        level: profile?.angelLevel || 1,
+        exp: profile?.exp || 0,
+        nextLevelExp: profile?.nextLevelExp || 50,
+        angelLevel: profile?.angelLevel || 1,
+        totalPosts: profile?.totalPosts || 0,
+        totalReports: profile?.totalReports || 0,
+        totalFound: profile?.totalFound || 0,
+        joinDate: user?.metadata?.creationTime ? new Date(user.metadata.creationTime).toLocaleDateString('ko-KR') : '-',
+        currentTitle: profile?.currentTitle || 'neighborhood_guardian',
+        goldenTimeParticipation: profile?.goldenTimeParticipation || 0,
+        communityPosts: profile?.communityPosts || 0,
+        likesReceived: profile?.likesReceived || 0
     };
 
     const expPercent = Math.round((userProfile.exp / userProfile.nextLevelExp) * 100);
@@ -674,6 +709,27 @@ const ProfilePage = ({ myTown }) => {
                         <ChevronRight size={18} color="var(--text-light)" />
                     </div>
                 ))}
+            </div>
+
+            {/* 가입일 + 로그아웃 */}
+            <div style={{ padding: '20px', textAlign: 'center' }}>
+                <div style={{ fontSize: '12px', color: 'var(--text-light)', marginBottom: '16px' }}>
+                    가입일: {userProfile.joinDate} · {user?.email || '이메일 미설정'}
+                </div>
+                <button
+                    type="button"
+                    onClick={signOut}
+                    style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        padding: '10px 24px', borderRadius: '10px',
+                        border: '1px solid #e0e0e0', backgroundColor: 'white',
+                        color: '#e53935', fontSize: '14px', fontWeight: '700',
+                        cursor: 'pointer'
+                    }}
+                >
+                    <LogOut size={16} />
+                    로그아웃
+                </button>
             </div>
         </div>
     );

@@ -21,6 +21,7 @@ const NewPostForm = ({ onBack, onSubmit }) => {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [showFlyerModal, setShowFlyerModal] = useState(false);
     const [linkCopied, setLinkCopied] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const flyerRef = useRef(null);
 
     const handleImageUpload = (e) => {
@@ -958,11 +959,24 @@ const NewPostForm = ({ onBack, onSubmit }) => {
 
                 {/* Submit Button */}
                 <button
-                    onClick={() => onSubmit(formData)}
+                    onClick={async () => {
+                        if (isSubmitting) return;
+                        setIsSubmitting(true);
+                        try {
+                            await onSubmit(formData);
+                        } finally {
+                            setIsSubmitting(false);
+                        }
+                    }}
+                    disabled={isSubmitting}
                     className="btn btn-primary"
-                    style={{ width: '100%', padding: '16px', fontSize: '18px', marginTop: '32px' }}
+                    style={{ 
+                        width: '100%', padding: '16px', fontSize: '18px', marginTop: '32px',
+                        backgroundColor: isSubmitting ? '#90CAF9' : 'var(--primary)',
+                        cursor: isSubmitting ? 'wait' : 'pointer'
+                    }}
                 >
-                    등록 완료
+                    {isSubmitting ? '등록 중... (사진 업로드 포함)' : '등록 완료'}
                 </button>
             </div>
 

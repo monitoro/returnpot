@@ -5,7 +5,10 @@ import {
     signInWithPopup,
     signOut as firebaseSignOut,
     onAuthStateChanged,
-    linkWithPopup
+    linkWithPopup,
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    updateProfile as firebaseUpdateProfile
 } from 'firebase/auth';
 import {
     doc,
@@ -18,15 +21,22 @@ import {
 const USERS_COLLECTION = 'users';
 const googleProvider = new GoogleAuthProvider();
 
+// 어드민 이메일 목록 (Firebase Console에서도 관리 가능)
+const ADMIN_EMAILS = ['monitoro@gmail.com'
+    // 여기에 어드민 이메일 추가
+];
+
 // 기본 프로필 데이터
-const createDefaultProfile = (user) => ({
+const createDefaultProfile = (user, extraData = {}) => ({
     uid: user.uid,
-    nickname: user.displayName || `이웃${user.uid.slice(0, 4)}`,
-    email: user.email || null,
+    nickname: extraData.nickname || user.displayName || `이웃${user.uid.slice(0, 4)}`,
+    email: user.email || extraData.email || null,
     photoURL: user.photoURL || null,
     town: '역삼1동',
     level: 1,
+    angelLevel: 1,
     exp: 0,
+    nextLevelExp: 50,
     totalPosts: 0,
     totalReports: 0,
     totalFound: 0,
@@ -37,6 +47,7 @@ const createDefaultProfile = (user) => ({
     unlockedTitles: [],
     unlockedBadges: [],
     isAnonymous: user.isAnonymous,
+    isAdmin: ADMIN_EMAILS.includes(user.email) || false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
 });
@@ -63,12 +74,10 @@ export const authService = {
     async signInWithGoogle() {
         try {
             let result;
-            // 이미 익명 로그인 상태면 계정 연결
             if (auth.currentUser && auth.currentUser.isAnonymous) {
                 try {
                     result = await linkWithPopup(auth.currentUser, googleProvider);
                 } catch (linkError) {
-                    // 이미 다른 계정으로 연결된 경우 일반 로그인
                     if (linkError.code === 'auth/credential-already-in-use' ||
                         linkError.code === 'auth/email-already-in-use') {
                         result = await signInWithPopup(auth, googleProvider);
@@ -83,11 +92,47 @@ export const authService = {
                 nickname: result.user.displayName,
                 email: result.user.email,
                 photoURL: result.user.photoURL,
-                isAnonymous: false
+                isAnonymous: false,
+                isAdmin: ADMIN_EMAILS.includes(result.user.email)
             });
             return result.user;
         } catch (error) {
             console.error('Google 로그인 실패:', error);
+            throw error;
+        }
+    },
+
+    // 이메일 회원가입
+    async signUpWithEmail(email, password, nickname) {
+        try {
+            const result = await createUserWithEmailAndPassword(auth, email, password);
+            // Firebase Auth 프로필에 닉네임 설정
+            await firebaseUpdateProfile(result.user, { displayName: nickname });
+            await this.ensureUserProfile(result.user, {
+                nickname,
+                email,
+                isAnonymous: false,
+                isAdmin: ADMIN_EMAILS.includes(email)
+            });
+            return result.user;
+        } catch (error) {
+            console.error('이메일 회원가입 실패:', error);
+            throw error;
+        }
+    },
+
+    // 이메일 로그인
+    async signInWithEmail(email, password) {
+        try {
+            const result = await signInWithEmailAndPassword(auth, email, password);
+            await this.ensureUserProfile(result.user, {
+                email,
+                isAnonymous: false,
+                isAdmin: ADMIN_EMAILS.includes(email)
+            });
+            return result.user;
+        } catch (error) {
+            console.error('이메일 로그인 실패:', error);
             throw error;
         }
     },
@@ -108,12 +153,10 @@ export const authService = {
         const userSnap = await getDoc(userRef);
 
         if (!userSnap.exists()) {
-            // 신규 사용자 → 프로필 생성
-            const profile = { ...createDefaultProfile(user), ...extraData };
+            const profile = { ...createDefaultProfile(user, extraData), ...extraData };
             await setDoc(userRef, profile);
             return profile;
         } else {
-            // 기존 사용자 → 필요시 업데이트
             if (Object.keys(extraData).length > 0) {
                 await updateDoc(userRef, {
                     ...extraData,

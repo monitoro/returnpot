@@ -8,7 +8,8 @@ import {
     serverTimestamp,
     where,
     doc,
-    updateDoc
+    updateDoc,
+    deleteDoc
 } from 'firebase/firestore';
 
 const COLLECTION_NAME = 'posts';
@@ -17,7 +18,6 @@ export const postService = {
     // 게시물 등록
     async createPost(postData) {
         try {
-            // 필수 데이터 검증
             if (!postData.uid) throw new Error("User ID is required");
 
             const docRef = await addDoc(collection(db, COLLECTION_NAME), {
@@ -41,13 +41,9 @@ export const postService = {
             orderBy('createdAt', 'desc')
         );
 
-        // 카테고리 필터
         if (filter.category && filter.category !== 'ALL') {
             q = query(q, where('category', '==', filter.category));
         }
-
-        // 상태 필터 (기본적으로 ACTIVE만 보여줄지, 전체 보여줄지 등)
-        // 현재는 모든 상태를 가져와서 프론트에서 처리하거나 필요한 경우 추가
 
         return onSnapshot(q, (querySnapshot) => {
             const posts = querySnapshot.docs.map(doc => {
@@ -55,9 +51,8 @@ export const postService = {
                 return {
                     id: doc.id,
                     ...data,
-                    // Timestamp를 Date 객체로 변환 (UI 렌더링 용이성)
                     createdAt: data.createdAt?.toDate() || new Date(),
-                    tags: data.tags || [],
+                    tags: Array.isArray(data.tags) ? data.tags : [],
                     imageUrl: data.imageUrl || 'https://via.placeholder.com/400x300?text=No+Image'
                 };
             });
@@ -67,9 +62,21 @@ export const postService = {
         });
     },
 
-    // 게시물 상태 업데이트 (예: 해결됨)
+    // 게시물 상태 업데이트
     async updatePostStatus(postId, status) {
         const postRef = doc(db, COLLECTION_NAME, postId);
         await updateDoc(postRef, { status });
+    },
+
+    // 게시물 삭제 (어드민 전용)
+    async deletePost(postId) {
+        try {
+            const postRef = doc(db, COLLECTION_NAME, postId);
+            await deleteDoc(postRef);
+            console.log("게시물 삭제 완료:", postId);
+        } catch (error) {
+            console.error("Error deleting document: ", error);
+            throw error;
+        }
     }
 };
