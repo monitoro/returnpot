@@ -102,13 +102,11 @@ function App() {
 
             await postService.createPost(postToSave);
 
+            // 알림을 먼저 띄운 후 사용자가 확인(OK)을 누르면 화면 전환 및 초기화 진행
+            alert("새로운 제보가 성공적으로 등록되었습니다!");
             setShowForm(false);
             setMainView('feed');
             window.scrollTo(0, 0);
-
-            setTimeout(() => {
-                alert("새로운 제보가 성공적으로 등록되었습니다!");
-            }, 300);
 
         } catch (error) {
             console.error("게시물 등록 실패:", error);
