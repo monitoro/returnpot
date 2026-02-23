@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Map, Search, PlusCircle, Bell, User, MapPin, Grid, MessageCircle, Settings, MessageSquare, Zap, ShieldCheck, Award, Edit3, LogOut, Trash2, CheckSquare, Square, X, CheckCircle } from 'lucide-react'
+import { Map, Search, PlusCircle, Bell, User, MapPin, Grid, MessageCircle, Settings, MessageSquare, Zap, ShieldCheck, Award, Edit3, LogOut, Trash2, CheckSquare, Square, X, CheckCircle, Heart, Eye } from 'lucide-react'
 import NewPostForm from './components/NewPostForm'
 import CommunityBoard from './components/CommunityBoard'
 import ChatRoom from './components/ChatRoom'
@@ -11,6 +11,8 @@ import LoginScreen from './components/LoginScreen'
 import { useAuth } from './contexts/AuthContext'
 import { postService } from './services/postService'
 import { storageService } from './services/storageService'
+import { authService } from './services/authService'
+import { chatService } from './services/chatService'
 
 
 function App() {
@@ -27,10 +29,18 @@ function App() {
     const [selectMode, setSelectMode] = useState(false)
     const [selectedPosts, setSelectedPosts] = useState(new Set())
     const [showAdminGenerator, setShowAdminGenerator] = useState(false)
+    const [confirmAction, setConfirmAction] = useState(null) // 커스텀 확인 팝업 상태
 
     // Firestore Data
     const [posts, setPosts] = useState([])
     const [loadingPosts, setLoadingPosts] = useState(true)
+    const [likedPosts, setLikedPosts] = useState(new Set()) // 좋아요한 게시물 ID
+    const [viewedPosts, setViewedPosts] = useState(new Set()) // 조회된 게시물 ID (중복 방지)
+
+    // 피드 상세 모달 내 댓글 상태
+    const [comments, setComments] = useState([])
+    const [newComment, setNewComment] = useState('')
+    const [likedComments, setLikedComments] = useState(new Set()) // 좋아요한 댓글 ID
 
     // 날짜시간 포맷 함수
     const formatDateTime = (dateInput) => {
@@ -65,6 +75,25 @@ function App() {
         return () => unsubscribe();
     }, [categoryFilter]);
 
+    // 피드 상세 팝업 댓글 실시간 구독 (모달이 열릴 때만)
+    useEffect(() => {
+        if (!showPostDetail || !showPostDetail.id) return;
+        
+        const unsubscribe = chatService.subscribeComments(showPostDetail.id, (msgs) => {
+            setComments(msgs);
+            if (user && !isAnonymous) {
+                msgs.forEach(async (msg) => {
+                    const liked = await chatService.checkCommentLiked(showPostDetail.id, msg.id, user.uid);
+                    if (liked) {
+                        setLikedComments(prev => new Set(prev).add(msg.id));
+                    }
+                });
+            }
+        });
+        
+        return () => unsubscribe();
+    }, [showPostDetail, user, isAnonymous]);
+
     const filteredPosts = posts.filter(p => categoryFilter === 'ALL' || p.category === categoryFilter);
 
     const handleCreatePost = async (newPost) => {
@@ -74,14 +103,16 @@ function App() {
         }
 
         try {
-            let uploadedImageUrl = null;
-
-            if (newPost.imageFile) {
-                try {
-                    uploadedImageUrl = await storageService.uploadImage(newPost.imageFile, 'posts');
-                } catch (imgErr) {
-                    console.error("이미지 업로드 실패:", imgErr);
-                    // 이미지 업로드 실패해도 글은 등록 (이미지 없이)
+            // 다중 이미지 업로드
+            const uploadedImageUrls = [];
+            if (newPost.imageFiles && newPost.imageFiles.length > 0) {
+                for (const file of newPost.imageFiles) {
+                    try {
+                        const url = await storageService.uploadImage(file, 'posts');
+                        uploadedImageUrls.push(url);
+                    } catch (imgErr) {
+                        console.error("이미지 업로드 실패:", imgErr);
+                    }
                 }
             }
 
@@ -97,7 +128,8 @@ function App() {
                 uid: user.uid,
                 authorNickname: profile?.nickname || '익명',
                 authorAngelLevel: profile?.angelLevel || 1,
-                imageUrl: uploadedImageUrl || null,
+                imageUrl: uploadedImageUrls[0] || null,
+                images: uploadedImageUrls,
                 lat: 37.5007 + (Math.random() - 0.5) * 0.02,
                 lng: 127.0365 + (Math.random() - 0.5) * 0.02,
                 views: 0,
@@ -109,8 +141,11 @@ function App() {
 
             await postService.createPost(postToSave);
 
-            // 알림창 렌더링 블로킹 이슈 해결: alert 대신 즉시 화면 전환
-            console.log("새로운 제보 등록 완료:", postToSave.id);
+            // 통계 + 경험치 갱신
+            try {
+                await authService.incrementStat(user.uid, 'totalPosts');
+                await authService.addExp(user.uid, 10); // 게시글 등록 +10 EXP
+            } catch (e) { console.error('통계 갱신 실패:', e); }
             setShowForm(false);
             setMainView('feed');
             window.scrollTo(0, 0);
@@ -159,35 +194,41 @@ function App() {
     }
 
     // 어드민 게시물 삭제 (단건)
-    const handleDeletePost = async (postId, postTitle) => {
+    const handleDeletePost = (postId, postTitle) => {
         if (!isAdmin) return;
-        const confirmDelete = window.confirm(`"${postTitle}" 게시물을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`);
-        if (confirmDelete) {
-            try {
-                await postService.deletePost(postId);
-            } catch (err) {
-                console.error('삭제 실패:', err);
-                alert('삭제에 실패했습니다: ' + err.message);
+        setConfirmAction({
+            message: `"${postTitle}" 게시물을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`,
+            confirmText: '삭제',
+            onConfirm: async () => {
+                try {
+                    await postService.deletePost(postId);
+                } catch (err) {
+                    console.error('삭제 실패:', err);
+                    alert('삭제에 실패했습니다: ' + err.message);
+                }
             }
-        }
+        });
     };
 
     // 어드민 다중 삭제
-    const handleBulkDelete = async () => {
+    const handleBulkDelete = () => {
         if (selectedPosts.size === 0) return;
-        const confirmDelete = window.confirm(`선택한 ${selectedPosts.size}개 게시물을 모두 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`);
-        if (confirmDelete) {
-            try {
-                for (const postId of selectedPosts) {
-                    await postService.deletePost(postId);
+        setConfirmAction({
+            message: `선택한 ${selectedPosts.size}개 게시물을 모두 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`,
+            confirmText: '삭제',
+            onConfirm: async () => {
+                try {
+                    for (const postId of selectedPosts) {
+                        await postService.deletePost(postId);
+                    }
+                    setSelectedPosts(new Set());
+                    setSelectMode(false);
+                } catch (err) {
+                    console.error('다중 삭제 실패:', err);
+                    alert('삭제 중 오류가 발생했습니다.');
                 }
-                setSelectedPosts(new Set());
-                setSelectMode(false);
-            } catch (err) {
-                console.error('다중 삭제 실패:', err);
-                alert('삭제 중 오류가 발생했습니다.');
             }
-        }
+        });
     };
 
     // 체크박스 토글
@@ -201,16 +242,110 @@ function App() {
     };
 
     // 의뢰종료 처리
-    const handleCloseCase = async (postId) => {
-        const confirmClose = window.confirm('의뢰를 종료하시겠습니까?\n종료 후에는 되돌릴 수 없습니다.');
-        if (confirmClose) {
-            try {
-                await postService.updatePostStatus(postId, 'RETURNED');
-            } catch (err) {
-                console.error('의뢰종료 실패:', err);
-                alert('의뢰종료에 실패했습니다.');
+    const handleCloseCase = (postId) => {
+        setConfirmAction({
+            message: '의뢰를 종료하시겠습니까?\n종료 후에는 되돌릴 수 없습니다.',
+            confirmText: '종료',
+            onConfirm: async () => {
+                try {
+                    await postService.updatePostStatus(postId, 'RETURNED');
+                    // 의뢰종료 통계 + 경험치
+                    if (user) {
+                        await authService.incrementStat(user.uid, 'totalFound');
+                        await authService.addExp(user.uid, 30); // 의뢰종료 +30 EXP
+                    }
+                } catch (err) {
+                    console.error('의뢰종료 실패:', err);
+                    alert('의뢰종료에 실패했습니다.');
+                }
             }
+        });
+    };
+
+    // 상세보기 열기 (조회수 증가 + 좋아요 확인 + 댓글 구독)
+    const openPostDetail = async (post) => {
+        setShowPostDetail(post);
+        // 조회수 증가 (세션 내 중복 방지)
+        if (!viewedPosts.has(post.id)) {
+            try {
+                await postService.incrementViews(post.id);
+                setViewedPosts(prev => new Set(prev).add(post.id));
+            } catch (e) { console.error(e); }
         }
+        // 댓글 구독을 위해 아래 useEffect를 사용하므로 여기서는 초기화만.
+        setComments([]);
+        setNewComment('');
+        
+        // 좋아요 여부 확인
+        if (user && !isAnonymous) {
+            try {
+                const liked = await postService.checkLiked(post.id, user.uid);
+                if (liked) setLikedPosts(prev => new Set(prev).add(post.id));
+            } catch (e) { console.error(e); }
+        }
+    };
+
+    const closePostDetail = () => {
+        setShowPostDetail(null);
+    };
+
+    // 댓글 작성
+    const handleCommentSubmit = async (postId) => {
+        if (!newComment.trim() || isAnonymous) {
+            if (isAnonymous) alert('댓글 작성은 로그인이 필요합니다.');
+            return;
+        }
+        try {
+            await chatService.sendComment(postId, {
+                uid: user.uid,
+                senderName: profile?.nickname || `이웃${user.uid.slice(0, 4)}`,
+                text: newComment.trim()
+            });
+            await postService.incrementComments(postId);
+            setNewComment('');
+        } catch (e) { console.error('댓글 전송 실패:', e); }
+    };
+
+    // 댓글 좋아요 토글
+    const handleCommentLike = async (postId, messageId) => {
+        if (!user || isAnonymous) {
+            alert('로그인이 필요합니다.');
+            return;
+        }
+        const isLiked = await chatService.toggleCommentLike(postId, messageId, user.uid);
+        setLikedComments(prev => {
+            const next = new Set(prev);
+            if (isLiked) next.add(messageId);
+            else next.delete(messageId);
+            return next;
+        });
+    };
+
+    // 좋아요 토글
+    const handleToggleLike = async (postId) => {
+        if (!user || isAnonymous) {
+            alert('좋아요는 로그인이 필요합니다.');
+            return;
+        }
+        try {
+            const isLiked = await postService.toggleLike(postId, user.uid);
+            setLikedPosts(prev => {
+                const next = new Set(prev);
+                if (isLiked) next.add(postId);
+                else next.delete(postId);
+                return next;
+            });
+            // 좋아요한 경우 게시물 작성자에게 likesReceived 증가 + 나에게 경험치
+            if (isLiked) {
+                const likedPost = posts.find(p => p.id === postId);
+                if (likedPost && likedPost.uid && likedPost.uid !== user.uid) {
+                    try {
+                        await authService.incrementStat(likedPost.uid, 'likesReceived');
+                    } catch (e) { console.error(e); }
+                }
+                try { await authService.addExp(user.uid, 2); } catch (e) { console.error(e); }
+            }
+        } catch (e) { console.error(e); }
     };
 
     return (
@@ -413,13 +548,23 @@ function App() {
                                         <div style={{ position: 'relative', cursor: 'pointer' }} onClick={(e) => {
                                             if (selectMode) return;
                                             e.stopPropagation();
-                                            setShowPostDetail(post);
+                                            openPostDetail(post);
                                         }}>
                                             <img src={post.imageUrl} alt={post.title} style={{
                                                 width: '100%', height: '160px', objectFit: 'cover',
                                                 marginTop: (post.urgent && !isReturned) ? '26px' : '0',
                                                 filter: isReturned ? 'grayscale(100%)' : 'none'
                                             }} />
+                                            {post.images && post.images.length > 1 && (
+                                                <div style={{
+                                                    position: 'absolute', bottom: '8px', right: '8px',
+                                                    backgroundColor: 'rgba(0,0,0,0.6)', color: 'white',
+                                                    padding: '2px 8px', borderRadius: '10px',
+                                                    fontSize: '11px', fontWeight: '700'
+                                                }}>
+                                                    📷 {post.images.length}
+                                                </div>
+                                            )}
 
                                             {/* RETURNED 사선 텍스트 오버레이 */}
                                             {isReturned && (
@@ -531,6 +676,25 @@ function App() {
                                                 )}
                                             </div>
                                         </div>
+                                        {/* 통계: 좋아요·조회수·댓글 */}
+                                        <div style={{
+                                            display: 'flex', gap: '12px', padding: '6px 12px',
+                                            borderTop: '1px solid var(--border)', fontSize: '12px',
+                                            color: 'var(--text-light)', alignItems: 'center'
+                                        }}>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer' }}
+                                                onClick={(e) => { e.stopPropagation(); handleToggleLike(post.id); }}>
+                                                <Heart size={13} fill={likedPosts.has(post.id) ? '#e53935' : 'none'}
+                                                    color={likedPosts.has(post.id) ? '#e53935' : '#999'} />
+                                                {post.likes || 0}
+                                            </span>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                <Eye size={13} /> {post.views || 0}
+                                            </span>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                <MessageSquare size={13} /> {post.comments || 0}
+                                            </span>
+                                        </div>
                                     </div>
                                     );
                                 })}
@@ -571,31 +735,36 @@ function App() {
                 return (
                 <div style={{
                     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000,
+                    backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1100,
                     display: 'flex', alignItems: 'flex-end', justifyContent: 'center'
-                }} onClick={() => setShowPostDetail(null)}>
+                }} onClick={closePostDetail}>
                     <div style={{
                         width: '100%', maxWidth: '500px', maxHeight: '90vh',
                         backgroundColor: 'white', borderRadius: '20px 20px 0 0',
-                        overflow: 'auto', padding: '0'
+                        display: 'flex', flexDirection: 'column',
+                        overflow: 'hidden', padding: 0
                     }} onClick={(e) => e.stopPropagation()}>
-                        {/* 드래그 핸들 */}
-                        <div style={{ padding: '12px 0 4px', display: 'flex', justifyContent: 'center' }}>
-                            <div style={{ width: '40px', height: '4px', borderRadius: '2px', backgroundColor: '#ddd' }} />
+                        {/* 고정 헤더 (드래그 핸들 + 닫기 버튼) */}
+                        <div style={{ flexShrink: 0, backgroundColor: 'white', zIndex: 10, paddingBottom: '4px' }}>
+                            <div style={{ padding: '12px 0 4px', display: 'flex', justifyContent: 'center' }}>
+                                <div style={{ width: '40px', height: '4px', borderRadius: '2px', backgroundColor: '#ddd' }} />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 16px' }}>
+                                <button type="button" onClick={closePostDetail}
+                                    style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '4px' }}>
+                                    <X size={22} color="#999" />
+                                </button>
+                            </div>
                         </div>
 
-                        {/* 닫기 버튼 */}
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 16px' }}>
-                            <button type="button" onClick={() => setShowPostDetail(null)}
-                                style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '4px' }}>
-                                <X size={22} color="#999" />
-                            </button>
-                        </div>
-
-                        {/* 이미지 */}
-                        <div style={{ position: 'relative' }}>
+                        {/* 스크롤 본문 */}
+                        <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '20px' }}>
+                            {/* 이미지 */}
+                            <div style={{ position: 'relative' }}>
+                            {/* 대표 이미지 */}
                             <img src={post.imageUrl} alt={post.title} style={{
-                                width: '100%', height: '220px', objectFit: 'cover',
+                                width: '100%', maxHeight: '300px', objectFit: 'contain',
+                                backgroundColor: '#f0f0f0',
                                 filter: isReturned ? 'grayscale(100%)' : 'none'
                             }} />
                             {isReturned && (
@@ -614,6 +783,21 @@ function App() {
                                 </div>
                             )}
                         </div>
+                        {/* 추가 이미지들 */}
+                        {post.images && post.images.length > 1 && (
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: post.images.length === 2 ? '1fr' : 'repeat(2, 1fr)',
+                                gap: '4px', padding: '4px'
+                            }}>
+                                {post.images.slice(1).map((imgUrl, i) => (
+                                    <img key={`detail-img-${i}`} src={imgUrl} alt={`${post.title} ${i + 2}`} style={{
+                                        width: '100%', maxHeight: '200px', objectFit: 'contain',
+                                        backgroundColor: '#f0f0f0', borderRadius: '4px'
+                                    }} />
+                                ))}
+                            </div>
+                        )}
 
                         {/* 상세 정보 */}
                         <div style={{ padding: '20px' }}>
@@ -715,8 +899,21 @@ function App() {
 
                             {/* 액션 버튼 */}
                             <div style={{ display: 'flex', gap: '8px' }}>
+                                {/* 좋아요 버튼 */}
+                                <button type="button" onClick={() => handleToggleLike(post.id)}
+                                    style={{
+                                        padding: '12px 16px', borderRadius: '12px',
+                                        border: likedPosts.has(post.id) ? '1px solid #e53935' : '1px solid var(--border)',
+                                        backgroundColor: likedPosts.has(post.id) ? '#FFEBEE' : 'white',
+                                        color: likedPosts.has(post.id) ? '#e53935' : '#666',
+                                        fontSize: '14px', fontWeight: '700', cursor: 'pointer',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                                    }}>
+                                    <Heart size={16} fill={likedPosts.has(post.id) ? '#e53935' : 'none'} />
+                                    {post.likes || 0}
+                                </button>
                                 {isMyPost && !isReturned && (
-                                    <button type="button" onClick={() => { handleCloseCase(post.id); setShowPostDetail(null); }}
+                                    <button type="button" onClick={() => { handleCloseCase(post.id); closePostDetail(); }}
                                         style={{
                                             flex: 1, padding: '12px', borderRadius: '12px', border: 'none',
                                             backgroundColor: '#E8F5E9', color: '#2E7D32',
@@ -727,7 +924,7 @@ function App() {
                                     </button>
                                 )}
                                 {!isReturned && (
-                                    <button type="button" onClick={() => { setShowChat(post); setShowPostDetail(null); }}
+                                    <button type="button" onClick={() => { setShowChat(post); closePostDetail(); }}
                                         className="btn btn-primary"
                                         style={{
                                             flex: 1, padding: '12px', borderRadius: '12px', border: 'none',
@@ -738,7 +935,111 @@ function App() {
                                     </button>
                                 )}
                             </div>
-                        </div>
+                            {/* 통계 */}
+                            <div style={{
+                                display: 'flex', gap: '16px', marginTop: '12px',
+                                padding: '10px', borderRadius: '8px', backgroundColor: '#f8f9fa',
+                                fontSize: '13px', color: 'var(--text-light)'
+                            }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <Eye size={14} /> 조회 {post.views || 0}
+                                </span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <Heart size={14} /> 좋아요 {post.likes || 0}
+                                </span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <MessageSquare size={14} /> 댓글 {post.comments || 0}
+                                </span>
+                            </div>
+
+                            <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '20px 0' }} />
+
+                            {/* 댓글 섹션 */}
+                            <div style={{ marginBottom: '16px' }}>
+                                <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '16px' }}>댓글 ({comments.length})</h3>
+                                {comments.length === 0 ? (
+                                    <div style={{ textAlign: 'center', padding: '20px 0', color: '#999', fontSize: '14px' }}>
+                                        아직 댓글이 없습니다.<br/>첫 번째 덧글을 남겨주세요!
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                        {comments.map(comment => (
+                                            <div key={comment.id} style={{ display: 'flex', gap: '10px' }}>
+                                                <div style={{
+                                                    width: '32px', height: '32px', borderRadius: '50%',
+                                                    backgroundColor: '#e6efff', color: '#0052cc',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                                }}>
+                                                    <User size={16} />
+                                                </div>
+                                                <div style={{ flex: 1 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                                                        <span style={{ fontSize: '14px', fontWeight: '700' }}>{comment.senderName}</span>
+                                                        <span style={{ fontSize: '11px', color: '#999' }}>{formatDateTime(comment.createdAt)}</span>
+                                                    </div>
+                                                    <div style={{ fontSize: '14px', color: '#333', marginTop: '4px', wordBreak: 'break-all' }}>
+                                                        {comment.text}
+                                                    </div>
+                                                    <div style={{ marginTop: '6px' }}>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleCommentLike(post.id, comment.id)}
+                                                            style={{
+                                                                background: 'none', border: 'none', padding: 0,
+                                                                display: 'flex', alignItems: 'center', gap: '4px',
+                                                                color: likedComments.has(comment.id) ? '#e53935' : '#888',
+                                                                fontSize: '12px', fontWeight: '600', cursor: 'pointer'
+                                                            }}>
+                                                            <Heart size={14} fill={likedComments.has(comment.id) ? '#e53935' : 'none'} />
+                                                            좋아요 {comment.likes || 0}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div> {/* 댓글 섹션 div 끝 */}
+                        </div> {/* 상세 정보 div 끝 */}
+                        </div> {/* 스크롤 본문 div 끝 */}
+                        
+                        {/* 하단 고정 댓글 입력창 */}
+                        {!isReturned && (
+                            <div style={{
+                                flexShrink: 0,
+                                padding: '12px 16px',
+                                paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+                                backgroundColor: 'white',
+                                borderTop: '1px solid #eee'
+                            }}>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                                    <textarea
+                                        value={newComment}
+                                        onChange={(e) => setNewComment(e.target.value)}
+                                        placeholder={isAnonymous ? "로그인 후 댓글을 작성할 수 있습니다." : "이웃에게 따뜻한 말을 남겨주세요."}
+                                        disabled={isAnonymous}
+                                        style={{
+                                            flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #e0e0e0',
+                                            fontSize: '14px', resize: 'none', minHeight: '44px',
+                                            backgroundColor: isAnonymous ? '#f5f5f5' : 'white'
+                                        }}
+                                        rows={1}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCommentSubmit(post.id)}
+                                        disabled={!newComment.trim() || isAnonymous}
+                                        style={{
+                                            padding: '12px', borderRadius: '12px', border: 'none',
+                                            backgroundColor: !newComment.trim() || isAnonymous ? '#e0e0e0' : 'var(--primary)',
+                                            color: 'white', cursor: !newComment.trim() || isAnonymous ? 'not-allowed' : 'pointer',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                        }}>
+                                        <MessageSquare size={18} />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
                 );
@@ -834,6 +1135,31 @@ function App() {
           100% { opacity: 1; transform: scale(1); }
         }
       `}</style>
+            {/* 커스텀 확인 팝업 (window.confirm 대체) */}
+            {confirmAction && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }} onClick={() => setConfirmAction(null)}>
+                    <div className="glass" style={{
+                        backgroundColor: 'white', padding: '24px', borderRadius: '16px',
+                        width: '80%', maxWidth: '320px', textAlign: 'center',
+                        display: 'flex', flexDirection: 'column', gap: '20px'
+                    }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ fontSize: '15px', fontWeight: '800', lineHeight: '1.5', whiteSpace: 'pre-wrap', color: 'var(--text)' }}>
+                            {confirmAction.message}
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <button onClick={() => setConfirmAction(null)} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', backgroundColor: '#f0f0f0', color: '#666', fontSize: '14px', fontWeight: '800', cursor: 'pointer' }}>취소</button>
+                            <button onClick={async () => {
+                                await confirmAction.onConfirm();
+                                setConfirmAction(null);
+                            }} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', backgroundColor: confirmAction.confirmText === '삭제' ? '#e53935' : 'var(--primary)', color: 'white', fontSize: '14px', fontWeight: '800', cursor: 'pointer' }}>{confirmAction.confirmText || '확인'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

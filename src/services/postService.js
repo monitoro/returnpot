@@ -9,7 +9,10 @@ import {
     where,
     doc,
     updateDoc,
-    deleteDoc
+    deleteDoc,
+    getDoc,
+    setDoc,
+    increment
 } from 'firebase/firestore';
 
 const COLLECTION_NAME = 'posts';
@@ -78,5 +81,43 @@ export const postService = {
             console.error("Error deleting document: ", error);
             throw error;
         }
+    },
+
+    // 좋아요 토글
+    async toggleLike(postId, userId) {
+        const likeRef = doc(db, COLLECTION_NAME, postId, 'likes', userId);
+        const postRef = doc(db, COLLECTION_NAME, postId);
+        const likeSnap = await getDoc(likeRef);
+
+        if (likeSnap.exists()) {
+            // 좋아요 취소
+            await deleteDoc(likeRef);
+            await updateDoc(postRef, { likes: increment(-1) });
+            return false;
+        } else {
+            // 좋아요 추가
+            await setDoc(likeRef, { createdAt: serverTimestamp() });
+            await updateDoc(postRef, { likes: increment(1) });
+            return true;
+        }
+    },
+
+    // 좋아요 여부 확인
+    async checkLiked(postId, userId) {
+        const likeRef = doc(db, COLLECTION_NAME, postId, 'likes', userId);
+        const likeSnap = await getDoc(likeRef);
+        return likeSnap.exists();
+    },
+
+    // 조회수 증가
+    async incrementViews(postId) {
+        const postRef = doc(db, COLLECTION_NAME, postId);
+        await updateDoc(postRef, { views: increment(1) });
+    },
+
+    // 댓글 수 증가
+    async incrementComments(postId) {
+        const postRef = doc(db, COLLECTION_NAME, postId);
+        await updateDoc(postRef, { comments: increment(1) });
     }
 };

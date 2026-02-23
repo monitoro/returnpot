@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquare, Heart, Share2, MoreHorizontal, User, Edit3, X, Send, Camera, Image, Link2, Play, ExternalLink, Trash2 } from 'lucide-react';
 import { communityService } from '../services/communityService';
+import { authService } from '../services/authService';
 import { useAuth } from '../contexts/AuthContext';
 
 // YouTube URL에서 비디오 ID 추출
@@ -147,6 +148,13 @@ const CommunityBoard = ({ formatDateTime, isAnonymous, signOut, isAdmin }) => {
             });
             setNewPost({ category: '자유게시판', content: '', tags: '', images: [], linkUrl: '' });
             setShowWriteModal(false);
+            // 통계 + 경험치 갱신
+            if (user?.uid) {
+                try {
+                    await authService.incrementStat(user.uid, 'communityPosts');
+                    await authService.addExp(user.uid, 5);
+                } catch (e) { console.error(e); }
+            }
         } catch (err) {
             console.error('글 작성 실패:', err);
             alert('글 작성에 실패했습니다.');

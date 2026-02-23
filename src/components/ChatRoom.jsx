@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, X, User, Phone, MapPin, Heart } from 'lucide-react';
 import { chatService } from '../services/chatService';
+import { postService } from '../services/postService';
 import { useAuth } from '../contexts/AuthContext';
 
 const ChatRoom = ({ post, onBack }) => {
@@ -48,6 +49,8 @@ const ChatRoom = ({ post, onBack }) => {
                 senderName: profile?.nickname || '익명',
                 text
             });
+            // 댓글 카운트 증가
+            await postService.incrementComments(post.id);
         } catch (err) {
             console.error('메시지 전송 실패:', err);
             alert('메시지 전송에 실패했습니다.');

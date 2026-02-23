@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { X, Sparkles, Image, Loader2, Check, AlertCircle, ChevronDown } from 'lucide-react';
+import { X, Sparkles, Image, Check, AlertCircle } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { communityService } from '../services/communityService';
 import { postService } from '../services/postService';
+import { publicDataService } from '../services/publicDataService';
 import { useAuth } from '../contexts/AuthContext';
 
 const AdminDataGenerator = ({ onClose }) => {
@@ -21,6 +22,16 @@ const AdminDataGenerator = ({ onClose }) => {
     const [feedLoading, setFeedLoading] = useState(false);
     const [feedError, setFeedError] = useState('');
     const fileInputRef = useRef(null);
+
+    // 공공데이터 상태
+    const [publicAnimals, setPublicAnimals] = useState([]);
+    const [publicLoading, setPublicLoading] = useState(false);
+    const [publicError, setPublicError] = useState('');
+    const [publicFilter, setPublicFilter] = useState({ upkind: '', pageNo: 1 });
+    const [publicTotalCount, setPublicTotalCount] = useState(0);
+    const [publicSelected, setPublicSelected] = useState(new Set());
+    const [publicSaving, setPublicSaving] = useState(false);
+    const [publicSaved, setPublicSaved] = useState(0);
 
     const categories = ['자유게시판', '목격제보', '실종방지팁', '찾았어요!'];
 
@@ -186,8 +197,9 @@ const AdminDataGenerator = ({ onClose }) => {
                 {/* 탭 */}
                 <div style={{ display: 'flex', borderBottom: '1px solid #eee' }}>
                     {[
-                        { key: 'community', label: '🤖 커뮤니티 AI 글', icon: Sparkles },
-                        { key: 'feed', label: '📷 피드 이미지 변환', icon: Image }
+                        { key: 'community', label: '🤖 커뮤니티 AI', icon: Sparkles },
+                        { key: 'feed', label: '📷 이미지 변환', icon: Image },
+                        { key: 'public', label: '📦 공공데이터', icon: Sparkles }
                     ].map(tab => (
                         <button key={tab.key} type="button"
                             onClick={() => setActiveTab(tab.key)}
@@ -437,6 +449,240 @@ const AdminDataGenerator = ({ onClose }) => {
                                     display: 'flex', alignItems: 'center', gap: '6px'
                                 }}>
                                     <AlertCircle size={14} /> {feedError}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ── 공공데이터 유기동물 ── */}
+                    {activeTab === 'public' && (
+                        <div>
+                            <p style={{ fontSize: '13px', color: '#666', marginBottom: '16px', lineHeight: '1.6' }}>
+                                농림축산식품부 유기동물 API에서 데이터를 가져와 피드 게시물로 변환합니다.
+                            </p>
+
+                            {/* 필터 */}
+                            <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                                {[
+                                    { label: '전체', value: '' },
+                                    { label: '🐶 개', value: '417000' },
+                                    { label: '🐱 고양이', value: '422400' },
+                                    { label: '🐾 기타', value: '429900' }
+                                ].map(f => (
+                                    <button key={f.value} type="button"
+                                        onClick={() => setPublicFilter({ ...publicFilter, upkind: f.value, pageNo: 1 })}
+                                        style={{
+                                            padding: '6px 12px', borderRadius: '8px',
+                                            border: publicFilter.upkind === f.value ? '2px solid #38A169' : '1px solid #ddd',
+                                            backgroundColor: publicFilter.upkind === f.value ? '#f0fff4' : 'white',
+                                            color: publicFilter.upkind === f.value ? '#38A169' : '#666',
+                                            fontSize: '12px', fontWeight: '600', cursor: 'pointer'
+                                        }}
+                                    >{f.label}</button>
+                                ))}
+                            </div>
+
+                            {/* 조회 버튼 */}
+                            <button type="button" onClick={async () => {
+                                setPublicLoading(true);
+                                setPublicError('');
+                                try {
+                                    const result = await publicDataService.fetchAnimals({
+                                        upkind: publicFilter.upkind,
+                                        numOfRows: 20,
+                                        pageNo: publicFilter.pageNo
+                                    });
+                                    setPublicAnimals(result.items);
+                                    setPublicTotalCount(result.totalCount);
+                                    setPublicSelected(new Set());
+                                } catch (err) {
+                                    setPublicError(err.message);
+                                } finally {
+                                    setPublicLoading(false);
+                                }
+                            }} disabled={publicLoading} style={{
+                                width: '100%', padding: '12px', borderRadius: '12px', border: 'none',
+                                background: publicLoading ? '#ccc' : 'linear-gradient(135deg, #38A169, #2F855A)',
+                                color: 'white', fontSize: '14px', fontWeight: '800',
+                                cursor: publicLoading ? 'not-allowed' : 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                                marginBottom: '12px'
+                            }}>
+                                {publicLoading ? '데이터 조회 중...' : `🔍 유기동물 조회 (${publicFilter.pageNo}페이지)`}
+                            </button>
+
+                            {publicError && (
+                                <div style={{
+                                    padding: '10px 14px', borderRadius: '8px',
+                                    backgroundColor: '#FFF5F5', border: '1px solid #FC8181',
+                                    color: '#C53030', fontSize: '12px', marginBottom: '12px',
+                                    display: 'flex', alignItems: 'center', gap: '6px'
+                                }}>
+                                    <AlertCircle size={14} /> {publicError}
+                                </div>
+                            )}
+
+                            {/* 결과 목록 */}
+                            {publicAnimals.length > 0 && (
+                                <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                        <span style={{ fontSize: '12px', color: '#888' }}>
+                                            총 {publicTotalCount.toLocaleString()}건 중 {publicAnimals.length}건 표시
+                                        </span>
+                                        <button type="button" onClick={() => {
+                                            setPublicSelected(publicSelected.size === publicAnimals.length
+                                                ? new Set()
+                                                : new Set(publicAnimals.map((_, i) => i))
+                                            );
+                                        }} style={{
+                                            padding: '4px 10px', borderRadius: '6px', border: '1px solid #ddd',
+                                            backgroundColor: 'white', color: '#666', fontSize: '11px',
+                                            fontWeight: '600', cursor: 'pointer'
+                                        }}>
+                                            {publicSelected.size === publicAnimals.length ? '전체 해제' : '전체 선택'}
+                                        </button>
+                                    </div>
+
+                                    {/* 동물 카드 목록 */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '350px', overflowY: 'auto' }}>
+                                        {publicAnimals.map((animal, i) => (
+                                            <div key={animal.desertionNo || `animal-${i}`}
+                                                onClick={() => {
+                                                    setPublicSelected(prev => {
+                                                        const next = new Set(prev);
+                                                        next.has(i) ? next.delete(i) : next.add(i);
+                                                        return next;
+                                                    });
+                                                }}
+                                                role="button"
+                                                tabIndex={0}
+                                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') {
+                                                    setPublicSelected(prev => {
+                                                        const next = new Set(prev);
+                                                        next.has(i) ? next.delete(i) : next.add(i);
+                                                        return next;
+                                                    });
+                                                }}}
+                                                style={{
+                                                    display: 'flex', gap: '10px', padding: '8px',
+                                                    borderRadius: '10px', cursor: 'pointer',
+                                                    border: publicSelected.has(i) ? '2px solid #38A169' : '1px solid #eee',
+                                                    backgroundColor: publicSelected.has(i) ? '#f0fff4' : '#fafafa'
+                                                }}
+                                            >
+                                                {animal.imageUrl ? (
+                                                    <img src={animal.imageUrl} alt={animal.title}
+                                                        style={{ width: '60px', height: '60px', borderRadius: '8px', objectFit: 'cover', flexShrink: 0 }}
+                                                        onError={(e) => { e.target.style.display = 'none'; }}
+                                                    />
+                                                ) : (
+                                                    <div style={{ width: '60px', height: '60px', borderRadius: '8px', backgroundColor: '#eee', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>
+                                                        🐾
+                                                    </div>
+                                                )}
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#2D3748', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                        {animal.title}
+                                                    </div>
+                                                    <div style={{ fontSize: '11px', color: '#718096', marginTop: '2px' }}>
+                                                        {animal.location?.split(' ').slice(0, 3).join(' ')}
+                                                    </div>
+                                                    <div style={{ fontSize: '10px', marginTop: '2px' }}>
+                                                        <span style={{
+                                                            padding: '1px 6px', borderRadius: '4px',
+                                                            backgroundColor: animal.processState === '보호중' ? '#FED7D7' : '#C6F6D5',
+                                                            color: animal.processState === '보호중' ? '#C53030' : '#2F855A',
+                                                            fontWeight: '600'
+                                                        }}>
+                                                            {animal.processState || '보호중'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div style={{
+                                                    width: '22px', height: '22px', borderRadius: '6px',
+                                                    border: publicSelected.has(i) ? '2px solid #38A169' : '2px solid #ccc',
+                                                    backgroundColor: publicSelected.has(i) ? '#38A169' : 'white',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    flexShrink: 0, alignSelf: 'center', color: 'white', fontSize: '12px'
+                                                }}>
+                                                    {publicSelected.has(i) ? '✓' : ''}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* 페이지 이동 */}
+                                    <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '12px' }}>
+                                        <button type="button" disabled={publicFilter.pageNo <= 1}
+                                            onClick={() => setPublicFilter(f => ({ ...f, pageNo: f.pageNo - 1 }))}
+                                            style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid #ddd', backgroundColor: 'white', cursor: 'pointer', fontSize: '12px' }}
+                                        >◀ 이전</button>
+                                        <span style={{ padding: '6px 10px', fontSize: '13px', fontWeight: '700', color: '#333' }}>
+                                            {publicFilter.pageNo} / {Math.ceil(publicTotalCount / 20) || 1}
+                                        </span>
+                                        <button type="button"
+                                            disabled={publicFilter.pageNo >= Math.ceil(publicTotalCount / 20)}
+                                            onClick={() => setPublicFilter(f => ({ ...f, pageNo: f.pageNo + 1 }))}
+                                            style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid #ddd', backgroundColor: 'white', cursor: 'pointer', fontSize: '12px' }}
+                                        >다음 ▶</button>
+                                    </div>
+
+                                    {/* 선택 저장 버튼 */}
+                                    {publicSelected.size > 0 && (
+                                        <button type="button" onClick={async () => {
+                                            setPublicSaving(true);
+                                            setPublicSaved(0);
+                                            let saved = 0;
+                                            for (const idx of publicSelected) {
+                                                const animal = publicAnimals[idx];
+                                                if (!animal) continue;
+                                                try {
+                                                    // 주소 → 좌표 변환 (Nominatim 1초 제한)
+                                                    const coords = await publicDataService.geocodeAddress(animal.location);
+                                                    await postService.createPost({
+                                                        uid: user.uid,
+                                                        type: animal.type,
+                                                        category: animal.category,
+                                                        title: animal.title,
+                                                        description: animal.description,
+                                                        location: animal.location,
+                                                        features: animal.features,
+                                                        tags: animal.tags,
+                                                        imageUrl: animal.imageUrl,
+                                                        urgent: animal.urgent,
+                                                        reward: '',
+                                                        authorName: '공공데이터',
+                                                        authorAngelLevel: 5,
+                                                        contact: animal.careTel || '',
+                                                        lat: coords.lat,
+                                                        lng: coords.lng,
+                                                        source: 'public_data_animal',
+                                                        sourceId: animal.desertionNo
+                                                    });
+                                                    saved++;
+                                                    setPublicSaved(saved);
+                                                    // Nominatim 속도 제한 (초당 1회)
+                                                    await new Promise(r => setTimeout(r, 1100));
+                                                } catch (err) {
+                                                    console.error('저장 실패:', err);
+                                                }
+                                            }
+                                            setPublicSaving(false);
+                                            setPublicSelected(new Set());
+                                            alert(`${saved}건의 유기동물 데이터가 피드에 저장되었습니다!`);
+                                        }} disabled={publicSaving} style={{
+                                            width: '100%', padding: '14px', borderRadius: '12px', border: 'none',
+                                            background: publicSaving ? '#ccc' : 'linear-gradient(135deg, #38A169, #276749)',
+                                            color: 'white', fontSize: '14px', fontWeight: '800',
+                                            cursor: publicSaving ? 'not-allowed' : 'pointer',
+                                            marginTop: '12px',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                                        }}>
+                                            {publicSaving
+                                                ? `저장 중... (${publicSaved}/${publicSelected.size})`
+                                                : `✅ 선택한 ${publicSelected.size}건 피드에 저장`}
+                                        </button>
+                                    )}
                                 </div>
                             )}
                         </div>

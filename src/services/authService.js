@@ -189,5 +189,45 @@ export const authService = {
     // 현재 사용자
     getCurrentUser() {
         return auth.currentUser;
+    },
+
+    // 활동 통계 증가
+    async incrementStat(uid, field, amount = 1) {
+        const { increment } = await import('firebase/firestore');
+        const userRef = doc(db, USERS_COLLECTION, uid);
+        await updateDoc(userRef, {
+            [field]: increment(amount),
+            updatedAt: serverTimestamp()
+        });
+    },
+
+    // 경험치 추가 + 자동 레벨업
+    async addExp(uid, amount) {
+        const { increment } = await import('firebase/firestore');
+        const userRef = doc(db, USERS_COLLECTION, uid);
+        const snap = await getDoc(userRef);
+        if (!snap.exists()) return;
+
+        const data = snap.data();
+        const newExp = (data.exp || 0) + amount;
+
+        // 레벨별 필요 경험치
+        const levelThresholds = [0, 0, 50, 100, 150, 200, 300, 400, 600, 900, 1500];
+        let newLevel = data.angelLevel || 1;
+        for (let i = levelThresholds.length - 1; i >= 1; i--) {
+            if (newExp >= levelThresholds[i]) {
+                newLevel = i;
+                break;
+            }
+        }
+        const nextIdx = Math.min(newLevel + 1, levelThresholds.length - 1);
+
+        await updateDoc(userRef, {
+            exp: increment(amount),
+            angelLevel: newLevel,
+            level: newLevel,
+            nextLevelExp: levelThresholds[nextIdx],
+            updatedAt: serverTimestamp()
+        });
     }
 };

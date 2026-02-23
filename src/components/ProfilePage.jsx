@@ -79,7 +79,7 @@ const ProfilePage = ({ myTown }) => {
 
     const currentLevelInfo = levelInfo.find(l => l.level === userProfile.level) || levelInfo[0];
 
-    // 직함 시스템
+    // 직함 시스템 - profile 데이터 기반 동적 계산
     const titles = [
         {
             id: 'neighborhood_guardian',
@@ -87,8 +87,8 @@ const ProfilePage = ({ myTown }) => {
             icon: Shield,
             description: '골든 타임 수색 3회 이상 참여',
             requirement: '골든 타임 수색 3회 참여',
-            unlocked: true,
-            equipped: true,
+            unlocked: userProfile.goldenTimeParticipation >= 3,
+            equipped: userProfile.currentTitle === 'neighborhood_guardian',
             color: '#0052CC',
             bgColor: '#E3F2FD'
         },
@@ -98,8 +98,8 @@ const ProfilePage = ({ myTown }) => {
             icon: Zap,
             description: '골든 타임 수색으로 실종자 발견 기여',
             requirement: '수색 참여 후 실종자 발견 1회',
-            unlocked: true,
-            equipped: false,
+            unlocked: userProfile.totalFound >= 1 && userProfile.goldenTimeParticipation >= 1,
+            equipped: userProfile.currentTitle === 'golden_time_hero',
             color: '#FF6D00',
             bgColor: '#FFF3E0'
         },
@@ -119,7 +119,8 @@ const ProfilePage = ({ myTown }) => {
             icon: SearchIcon,
             description: '반려동물 관련 제보 10회 이상',
             requirement: '반려동물 제보 10회',
-            unlocked: false,
+            unlocked: userProfile.totalPosts >= 10,
+            equipped: userProfile.currentTitle === 'pet_detective',
             color: '#1B5E20',
             bgColor: '#E8F5E9'
         },
@@ -129,7 +130,8 @@ const ProfilePage = ({ myTown }) => {
             icon: Star,
             description: '커뮤니티 게시글 좋아요 100개 달성',
             requirement: '좋아요 100개 달성',
-            unlocked: false,
+            unlocked: userProfile.likesReceived >= 100,
+            equipped: userProfile.currentTitle === 'community_star',
             color: '#F9A825',
             bgColor: '#FFFDE7'
         },
@@ -139,21 +141,22 @@ const ProfilePage = ({ myTown }) => {
             icon: Crown,
             description: '레벨 10 달성 + 습득물 반환 5회',
             requirement: 'Lv.10 + 반환 5회',
-            unlocked: false,
+            unlocked: userProfile.angelLevel >= 10 && userProfile.totalFound >= 5,
+            equipped: userProfile.currentTitle === 'town_legend',
             color: '#B71C1C',
             bgColor: '#FFEBEE'
         }
     ];
 
-    // 뱃지 시스템
+    // 뱃지 시스템 - profile 데이터 기반 동적 계산
     const badges = [
         {
             id: 'first_post',
             name: '첫 번째 외침',
             description: '첫 게시글 등록',
             icon: '📢',
-            unlocked: true,
-            progress: 1,
+            unlocked: userProfile.totalPosts >= 1,
+            progress: Math.min(userProfile.totalPosts, 1),
             total: 1,
             rarity: 'common'
         },
@@ -162,8 +165,8 @@ const ProfilePage = ({ myTown }) => {
             name: '따뜻한 이웃',
             description: '제보 댓글 10회 작성',
             icon: '🤝',
-            unlocked: true,
-            progress: 10,
+            unlocked: userProfile.totalReports >= 10,
+            progress: Math.min(userProfile.totalReports, 10),
             total: 10,
             rarity: 'common'
         },
@@ -172,8 +175,8 @@ const ProfilePage = ({ myTown }) => {
             name: '수색대원',
             description: '골든 타임 수색 3회 참여',
             icon: '🔦',
-            unlocked: true,
-            progress: 5,
+            unlocked: userProfile.goldenTimeParticipation >= 3,
+            progress: Math.min(userProfile.goldenTimeParticipation, 3),
             total: 3,
             rarity: 'uncommon'
         },
@@ -182,8 +185,8 @@ const ProfilePage = ({ myTown }) => {
             name: '기적의 재회',
             description: '실종 동물 찾기 성공 기여',
             icon: '🐾',
-            unlocked: true,
-            progress: 3,
+            unlocked: userProfile.totalFound >= 1,
+            progress: Math.min(userProfile.totalFound, 1),
             total: 1,
             rarity: 'rare'
         },
@@ -192,8 +195,8 @@ const ProfilePage = ({ myTown }) => {
             name: '수다왕',
             description: '커뮤니티 글 20개 작성',
             icon: '💬',
-            unlocked: false,
-            progress: 18,
+            unlocked: userProfile.communityPosts >= 20,
+            progress: Math.min(userProfile.communityPosts, 20),
             total: 20,
             rarity: 'uncommon'
         },
@@ -202,8 +205,8 @@ const ProfilePage = ({ myTown }) => {
             name: '7일 연속 출석',
             description: '7일 연속 앱 사용',
             icon: '🔥',
-            unlocked: true,
-            progress: 7,
+            unlocked: false,
+            progress: 0,
             total: 7,
             rarity: 'uncommon'
         },
@@ -212,8 +215,8 @@ const ProfilePage = ({ myTown }) => {
             name: '골든 타임 베테랑',
             description: '골든 타임 수색 10회 참여',
             icon: '⚡',
-            unlocked: false,
-            progress: 5,
+            unlocked: userProfile.goldenTimeParticipation >= 10,
+            progress: Math.min(userProfile.goldenTimeParticipation, 10),
             total: 10,
             rarity: 'rare'
         },
@@ -222,8 +225,8 @@ const ProfilePage = ({ myTown }) => {
             name: '천사의 날개',
             description: '엔젤 레벨 5 이상 달성',
             icon: '👼',
-            unlocked: true,
-            progress: 7,
+            unlocked: userProfile.angelLevel >= 5,
+            progress: Math.min(userProfile.angelLevel, 5),
             total: 5,
             rarity: 'rare'
         },
@@ -232,8 +235,8 @@ const ProfilePage = ({ myTown }) => {
             name: '습득물 요정',
             description: '습득물 반환 5회 완료',
             icon: '🧚',
-            unlocked: false,
-            progress: 3,
+            unlocked: userProfile.totalFound >= 5,
+            progress: Math.min(userProfile.totalFound, 5),
             total: 5,
             rarity: 'rare'
         },
@@ -252,8 +255,8 @@ const ProfilePage = ({ myTown }) => {
             name: '전설의 파인더',
             description: '실종자/동물 10회 이상 찾기 기여',
             icon: '🌟',
-            unlocked: false,
-            progress: 3,
+            unlocked: userProfile.totalFound >= 10,
+            progress: Math.min(userProfile.totalFound, 10),
             total: 10,
             rarity: 'legendary'
         },
@@ -262,8 +265,8 @@ const ProfilePage = ({ myTown }) => {
             name: '우리 동네 영웅',
             description: '같은 동네에서 50회 이상 활동',
             icon: '🦸',
-            unlocked: false,
-            progress: 28,
+            unlocked: (userProfile.totalPosts + userProfile.totalReports + userProfile.communityPosts) >= 50,
+            progress: Math.min(userProfile.totalPosts + userProfile.totalReports + userProfile.communityPosts, 50),
             total: 50,
             rarity: 'epic'
         }

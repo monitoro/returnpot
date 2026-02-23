@@ -3,12 +3,13 @@ import { Camera, X, MapPin, Tag, ChevronRight, Check, Zap, FileText, Share2, Cop
 
 const NewPostForm = ({ onBack, onSubmit }) => {
     const [formData, setFormData] = useState({
-        type: 'LOST', // LOST or FOUND
-        category: 'PET', // HUMAN, PET, ITEM
+        type: 'LOST',
+        category: 'PET',
         title: '',
         description: '',
         location: '',
-        image: null,
+        images: [],       // 다중 사진 미리보기 (base64)
+        imageFiles: [],   // 다중 사진 파일
         tags: [],
         // 전단지용 추가 필드
         petName: '',
@@ -25,16 +26,32 @@ const NewPostForm = ({ onBack, onSubmit }) => {
     const flyerRef = useRef(null);
 
     const handleImageUpload = (e) => {
-        const file = e.target.files[0];
-        if (file) {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
+        const remaining = 5 - formData.images.length;
+        const toAdd = files.slice(0, remaining);
+
+        toAdd.forEach(file => {
             const reader = new FileReader();
             reader.onloadend = () => {
-                // 미리보기용(image)와 업로드용(imageFile)을 분리 저장
-                setFormData({ ...formData, image: reader.result, imageFile: file });
-                analyzeImage();
+                setFormData(prev => ({
+                    ...prev,
+                    images: [...prev.images, reader.result],
+                    imageFiles: [...prev.imageFiles, file]
+                }));
             };
             reader.readAsDataURL(file);
-        }
+        });
+    };
+
+    const removeImage = (index) => {
+        setFormData(prev => ({
+            ...prev,
+            images: prev.images.filter((_, i) => i !== index),
+            imageFiles: prev.imageFiles.filter((_, i) => i !== index),
+            tags: index === 0 ? [] : prev.tags
+        }));
     };
 
     const analyzeImage = () => {
@@ -207,7 +224,7 @@ const NewPostForm = ({ onBack, onSubmit }) => {
         roundRect(ctx, photoX, photoY, photoW, photoH, 6);
         ctx.fill();
 
-        if (!formData.image) {
+        if (!formData.images[0]) {
             ctx.fillStyle = '#bbb';
             ctx.font = '15px sans-serif';
             ctx.textAlign = 'center';
@@ -419,7 +436,7 @@ const NewPostForm = ({ onBack, onSubmit }) => {
             link.click();
         };
 
-        if (formData.image) {
+        if (formData.images[0]) {
             const img = new Image();
             img.crossOrigin = 'anonymous';
             img.onload = () => {
@@ -441,7 +458,7 @@ const NewPostForm = ({ onBack, onSubmit }) => {
                 ctx.restore();
                 doDownload();
             };
-            img.src = formData.image;
+            img.src = formData.images[0];
         } else {
             doDownload();
         }
@@ -546,55 +563,67 @@ const NewPostForm = ({ onBack, onSubmit }) => {
                     </button>
                 </div>
 
-                {/* Image Upload Area */}
-                <div style={{
-                    width: '100%',
-                    aspectRatio: '1',
-                    backgroundColor: '#f0f2f5',
-                    borderRadius: 'var(--radius)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    cursor: 'pointer',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    marginBottom: '24px',
-                    border: '2px dashed var(--border)'
-                }}>
-                    {formData.image ? (
-                        <>
-                            <img src={formData.image} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            <button
-                                onClick={() => setFormData({ ...formData, image: null, tags: [] })}
-                                style={{ position: 'absolute', top: '10px', right: '10px', backgroundColor: 'rgba(0,0,0,0.5)', color: 'white', border: 'none', borderRadius: '50%', padding: '4px' }}
-                            >
-                                <X size={20} />
-                            </button>
-                        </>
-                    ) : (
-                        <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer' }}>
-                            <Camera size={48} color="#ccc" />
-                            <span style={{ marginTop: '12px', color: '#999' }}>사진을 촬영하거나 선택하세요</span>
-                            <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
-                        </label>
-                    )}
-
-                    {isAnalyzing && (
-                        <div style={{
-                            position: 'absolute',
-                            inset: 0,
-                            backgroundColor: 'rgba(0,82,204,0.6)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            color: 'white'
-                        }}>
-                            <div className="loader" style={{ marginBottom: '12px' }}></div>
-                            <span style={{ fontWeight: '600' }}>AI 기반 태그 추출 중...</span>
-                        </div>
-                    )}
+                {/* Image Upload Area - 다중 사진 */}
+                <div style={{ marginBottom: '24px' }}>
+                    <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '8px' }}>
+                        📷 사진 ({formData.images.length}/5)
+                    </label>
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        gap: '8px'
+                    }}>
+                        {formData.images.map((img, i) => (
+                            <div key={`img-${i}`} style={{
+                                position: 'relative',
+                                aspectRatio: '1',
+                                borderRadius: '12px',
+                                overflow: 'hidden',
+                                border: i === 0 ? '2px solid var(--primary)' : '1px solid var(--border)'
+                            }}>
+                                <img src={img} alt={`Preview ${i + 1}`} style={{
+                                    width: '100%', height: '100%', objectFit: 'cover'
+                                }} />
+                                {i === 0 && (
+                                    <div style={{
+                                        position: 'absolute', bottom: 0, left: 0, right: 0,
+                                        backgroundColor: 'var(--primary)', color: 'white',
+                                        fontSize: '10px', fontWeight: '700', textAlign: 'center',
+                                        padding: '2px'
+                                    }}>대표</div>
+                                )}
+                                <button type="button"
+                                    onClick={() => removeImage(i)}
+                                    style={{
+                                        position: 'absolute', top: '4px', right: '4px',
+                                        backgroundColor: 'rgba(0,0,0,0.5)', color: 'white',
+                                        border: 'none', borderRadius: '50%', width: '22px', height: '22px',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        cursor: 'pointer', padding: 0
+                                    }}
+                                >
+                                    <X size={14} />
+                                </button>
+                            </div>
+                        ))}
+                        {formData.images.length < 5 && (
+                            <label style={{
+                                aspectRatio: '1',
+                                borderRadius: '12px',
+                                border: '2px dashed var(--border)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                backgroundColor: '#f8f9fa'
+                            }}>
+                                <Camera size={28} color="#ccc" />
+                                <span style={{ fontSize: '11px', color: '#999', marginTop: '4px' }}>사진 추가</span>
+                                <input type="file" accept="image/*" multiple onChange={handleImageUpload} style={{ display: 'none' }} />
+                            </label>
+                        )}
+                    </div>
                 </div>
 
                 {/* AI Tags */}
@@ -1060,45 +1089,97 @@ const NewPostForm = ({ onBack, onSubmit }) => {
                                     </div>
                                 </div>
 
-                                {/* === 사진 영역 (노란 테두리) === */}
+                                {/* === 사진 영역 === */}
                                 <div style={{
                                     padding: '12px 30px 14px',
                                     display: 'flex',
-                                    justifyContent: 'center'
+                                    justifyContent: 'center',
+                                    gap: '8px',
+                                    flexWrap: 'wrap'
                                 }}>
-                                    <div style={{
-                                        width: '65%',
-                                        aspectRatio: '3/4',
-                                        border: '4px solid #F5A623',
-                                        borderRadius: '8px',
-                                        overflow: 'hidden',
-                                        position: 'relative',
-                                        backgroundColor: '#f8f8f8'
-                                    }}>
-                                        {formData.image ? (
-                                            <img src={formData.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                        ) : (
+                                    {formData.images.length === 0 && (
+                                        <div style={{
+                                            width: '65%',
+                                            aspectRatio: '3/4',
+                                            border: '4px solid #F5A623',
+                                            borderRadius: '8px',
+                                            overflow: 'hidden',
+                                            backgroundColor: '#f8f8f8',
+                                            display: 'flex', flexDirection: 'column',
+                                            alignItems: 'center', justifyContent: 'center',
+                                            color: '#ccc'
+                                        }}>
+                                            <Camera size={36} />
+                                            <div style={{ fontSize: '12px', marginTop: '8px', color: '#bbb' }}>사진을 등록해주세요</div>
+                                        </div>
+                                    )}
+                                    {formData.images.length === 1 && (
+                                        <div style={{
+                                            width: '65%',
+                                            aspectRatio: '3/4',
+                                            border: '4px solid #F5A623',
+                                            borderRadius: '8px',
+                                            overflow: 'hidden',
+                                            position: 'relative',
+                                            backgroundColor: '#f8f8f8'
+                                        }}>
+                                            <img src={formData.images[0]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            {formData.category === 'PET' && (
+                                                <div style={{
+                                                    position: 'absolute', top: '-6px', right: '-6px',
+                                                    width: '28px', height: '28px', borderRadius: '50%',
+                                                    backgroundColor: '#F5A623', display: 'flex',
+                                                    alignItems: 'center', justifyContent: 'center',
+                                                    fontSize: '14px', boxShadow: '0 2px 6px rgba(245,166,35,0.4)'
+                                                }}>🐾</div>
+                                            )}
+                                        </div>
+                                    )}
+                                    {formData.images.length === 2 && (
+                                        <div style={{ display: 'flex', gap: '6px', width: '80%' }}>
+                                            {formData.images.map((img, i) => (
+                                                <div key={`flyer-img-${i}`} style={{
+                                                    flex: 1, aspectRatio: '3/4',
+                                                    border: '3px solid #F5A623',
+                                                    borderRadius: '8px', overflow: 'hidden'
+                                                }}>
+                                                    <img src={img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {formData.images.length >= 3 && (
+                                        <div style={{ width: '85%' }}>
                                             <div style={{
-                                                width: '100%', height: '100%',
-                                                display: 'flex', flexDirection: 'column',
-                                                alignItems: 'center', justifyContent: 'center',
-                                                color: '#ccc'
+                                                aspectRatio: '4/3',
+                                                border: '3px solid #F5A623',
+                                                borderRadius: '8px', overflow: 'hidden',
+                                                marginBottom: '6px'
                                             }}>
-                                                <Camera size={36} />
-                                                <div style={{ fontSize: '12px', marginTop: '8px', color: '#bbb' }}>사진을 등록해주세요</div>
+                                                <img src={formData.images[0]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                             </div>
-                                        )}
-                                        {/* 🐾 발바닥 아이콘 장식 */}
-                                        {formData.category === 'PET' && (
-                                            <div style={{
-                                                position: 'absolute', top: '-6px', right: '-6px',
-                                                width: '28px', height: '28px', borderRadius: '50%',
-                                                backgroundColor: '#F5A623', display: 'flex',
-                                                alignItems: 'center', justifyContent: 'center',
-                                                fontSize: '14px', boxShadow: '0 2px 6px rgba(245,166,35,0.4)'
-                                            }}>🐾</div>
-                                        )}
-                                    </div>
+                                            <div style={{ display: 'flex', gap: '4px' }}>
+                                                {formData.images.slice(1, 4).map((img, i) => (
+                                                    <div key={`flyer-sub-${i}`} style={{
+                                                        flex: 1, aspectRatio: '1',
+                                                        border: '2px solid #F5A623',
+                                                        borderRadius: '6px', overflow: 'hidden',
+                                                        position: 'relative'
+                                                    }}>
+                                                        <img src={img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                        {i === 2 && formData.images.length > 4 && (
+                                                            <div style={{
+                                                                position: 'absolute', inset: 0,
+                                                                backgroundColor: 'rgba(0,0,0,0.5)',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                color: 'white', fontSize: '16px', fontWeight: '800'
+                                                            }}>+{formData.images.length - 4}</div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* === 정보 테이블 === */}

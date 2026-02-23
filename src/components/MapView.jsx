@@ -3,6 +3,7 @@ import {
     Filter, Zap, MapPin, Eye, Navigation, Layers, X,
     MessageSquare, Clock
 } from 'lucide-react';
+import { publicDataService } from '../services/publicDataService';
 
 const MapView = ({ posts = [], formatDateTime }) => {
     const mapRef = useRef(null);
@@ -12,6 +13,10 @@ const MapView = ({ posts = [], formatDateTime }) => {
     const [activeFilters, setActiveFilters] = useState({ LOST: true, FOUND: true, HUMAN: true, PET: true, ITEM: true });
     const [showFilters, setShowFilters] = useState(false);
     const [showFacilities, setShowFacilities] = useState(true);
+    const [showPublicData, setShowPublicData] = useState(true);
+    const [publicAnimals, setPublicAnimals] = useState([]);
+    const [loadingPublicData, setLoadingPublicData] = useState(false);
+    const geocodeCacheRef = useRef({});
     const [selectedPost, setSelectedPost] = useState(null);
     const [mapReady, setMapReady] = useState(false);
     const [myLocation, setMyLocation] = useState(null);
@@ -85,6 +90,49 @@ const MapView = ({ posts = [], formatDateTime }) => {
             map.remove();
             mapInstanceRef.current = null;
         };
+    }, [mapReady]);
+
+    // 공공데이터 유기동물 로드 및 지오코딩
+    useEffect(() => {
+        if (!mapReady) return;
+        let cancelled = false;
+
+        const loadPublicAnimals = async () => {
+            setLoadingPublicData(true);
+            try {
+                const result = await publicDataService.fetchAnimals({ numOfRows: 20 });
+                if (cancelled) return;
+
+                const geocoded = [];
+                for (const animal of result.items) {
+                    const addr = animal._raw?.careAddr || animal.location || '';
+                    if (!addr) continue;
+
+                    let coords;
+                    if (geocodeCacheRef.current[addr]) {
+                        coords = geocodeCacheRef.current[addr];
+                    } else {
+                        try {
+                            coords = await publicDataService.geocodeAddress(addr);
+                            geocodeCacheRef.current[addr] = coords;
+                            await new Promise(r => setTimeout(r, 1100));
+                        } catch {
+                            coords = { lat: 37.5007, lng: 127.0365 };
+                        }
+                    }
+                    if (cancelled) return;
+                    geocoded.push({ ...animal, lat: coords.lat, lng: coords.lng });
+                }
+                if (!cancelled) setPublicAnimals(geocoded);
+            } catch (err) {
+                console.error('공공데이터 로드 실패:', err);
+            } finally {
+                if (!cancelled) setLoadingPublicData(false);
+            }
+        };
+
+        loadPublicAnimals();
+        return () => { cancelled = true; };
     }, [mapReady]);
 
     // 마커 업데이트 - 실제 Firestore posts 사용
@@ -162,7 +210,42 @@ const MapView = ({ posts = [], formatDateTime }) => {
         myMarker.bindPopup('<strong>내 위치</strong>');
         markersRef.current.push(myMarker);
 
-        // 시설은 유지
+        // 공공데이터 유기동물 마커
+        if (showPublicData && publicAnimals.length > 0) {
+            publicAnimals.forEach(animal => {
+                if (!animal.lat || !animal.lng) return;
+                const isAnimalReturned = animal._raw?.processState?.includes('반환');
+                const animalIcon = L.divIcon({
+                    className: 'returns-marker',
+                    html: `<div style="
+                        width:32px; height:32px; border-radius:50%;
+                        background:${isAnimalReturned ? '#888' : '#FF9800'}; border:2px solid white;
+                        box-shadow:0 2px 8px rgba(0,0,0,0.25);
+                        display:flex; align-items:center; justify-content:center;
+                        font-size:14px;
+                        ${isAnimalReturned ? 'opacity:0.6;' : ''}
+                    ">🐕</div>`,
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 16]
+                });
+
+                const m = L.marker([animal.lat, animal.lng], { icon: animalIcon }).addTo(map);
+                const popupHtml = `
+                    <div style="max-width:200px;font-size:12px;line-height:1.5">
+                        ${animal.imageUrl ? `<img src="${animal.imageUrl}" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;margin-bottom:6px" />` : ''}
+                        <strong>${animal._raw?.kindFullNm || '품종미상'}</strong><br/>
+                        📍 ${animal._raw?.happenPlace || '장소 미상'}<br/>
+                        🏥 ${animal._raw?.careNm || '보호소 미상'}<br/>
+                        📞 ${animal._raw?.careTel || ''}<br/>
+                        📌 ${animal._raw?.processState || '보호중'}
+                    </div>
+                `;
+                m.bindPopup(popupHtml, { maxWidth: 220 });
+                markersRef.current.push(m);
+            });
+        }
+
+        // 시설 마커
         if (showFacilities) {
             const facilities = [
                 { name: '강남경찰서', lat: 37.5095, lng: 127.0668, emoji: '🚔' },
@@ -188,7 +271,7 @@ const MapView = ({ posts = [], formatDateTime }) => {
                 markersRef.current.push(fMarker);
             });
         }
-    }, [activeFilters, showFacilities, posts, myLocation]);
+    }, [activeFilters, showFacilities, showPublicData, publicAnimals, posts, myLocation]);
 
     useEffect(() => {
         if (mapReady && mapInstanceRef.current) {
@@ -341,6 +424,10 @@ const MapView = ({ posts = [], formatDateTime }) => {
                         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer', color: '#555' }}>
                             <input type="checkbox" checked={showFacilities} onChange={() => setShowFacilities(!showFacilities)} style={{ accentColor: '#0052CC' }} />
                             🏛️ 주요 시설
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', cursor: 'pointer', color: '#555' }}>
+                            <input type="checkbox" checked={showPublicData} onChange={() => setShowPublicData(!showPublicData)} style={{ accentColor: '#FF9800' }} />
+                            🐕 공공데이터 유기동물 {loadingPublicData && <span style={{ color: '#FF9800', fontSize: '10px' }}>(로딩중...)</span>}
                         </label>
                     </div>
                 </div>
