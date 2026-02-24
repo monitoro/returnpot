@@ -112,17 +112,18 @@ replies는 ${replyCount}개를 생성해주세요.
      * 이미지 분석 → 피드 게시물 데이터 추출
      */
     async analyzeImageForFeed(imageBase64) {
-        const prompt = `이 이미지를 분석해서 분실물/실종 관련 게시물 정보를 추출해주세요.
-이미지가 실종 전단지, 분실물 사진, 동물 사진 등이면 해당 정보를 추출하고,
-일반 사진이면 분실/습득 상황으로 가정하고 합리적인 정보를 생성해주세요.
+        const prompt = `이 이미지는 당근마켓 등 중고마켓 캡처, 커뮤니티 글 캡처, 전단지, 또는 일반 사진일 수 있습니다.
+가장 먼저 이미지 내에 포함된 '텍스트(제목, 본문 내용, 위치, 특징 등)'를 꼼꼼히 모두 읽고 파악해주세요.
+그 다음, 파악한 텍스트 정보를 바탕으로 분실이나 실종, 혹은 습득과 관련된 핵심 데이터를 추출해주세요.
+만약 글이 명확하지 않거나 사진만 있다면, 사진 속 사물/상황을 바탕으로 자연스럽게 정보를 유추하여 채워주세요.
 
-반드시 아래 JSON 형식으로만 응답 (다른 텍스트 없이):
+매우 중요: 마크다운 코드블록(\`\`\`json) 등 어떠한 설명도 덧붙이지 말고, 오직 아래 명시된 순수 JSON 객체 형태로만 응답하세요.
 {
   "type": "LOST 또는 FOUND",
   "category": "HUMAN, PET, ITEM 중 하나",
   "title": "게시물 제목 (한국어, 20자 내외)",
-  "description": "상세 설명 (한국어, 3~5문장)",
-  "location": "추정 위치 또는 '서울시 강남구' 같은 일반 위치",
+  "description": "상세 설명 (한국어, 3~5문장. 이미지 안의 중요 텍스트를 최대한 반영)",
+  "location": "추정 위치 또는 '서울시 강남구' 같은 일반 위치 (이미지 내 텍스트에 위치가 있다면 반드시 반영)",
   "features": "외형 특징 (한국어)",
   "tags": ["태그1", "태그2", "태그3"],
   "reward": "사례금 (예: 10만원, 없으면 빈 문자열)",
@@ -131,12 +132,14 @@ replies는 ${replyCount}개를 생성해주세요.
 
         const raw = await callGemini(prompt, imageBase64);
         try {
-            const jsonMatch = raw.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) throw new Error('JSON not found');
+            // 마크다운 백틱 및 불필요한 문자열 제거를 통한 파싱 안정화
+            const cleanedRaw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+            const jsonMatch = cleanedRaw.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) throw new Error('JSON object not found');
             return JSON.parse(jsonMatch[0]);
-        } catch {
-            console.error('이미지 분석 응답 파싱 실패:', raw);
-            throw new Error('이미지 분석 실패');
+        } catch (err) {
+            console.error('이미지 분석 응답 파싱 실패:', raw, err);
+            throw new Error('이미지 분석 실패: 데이터를 파싱할 수 없습니다.');
         }
     },
 

@@ -1,8 +1,10 @@
 import React, { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Camera, X, MapPin, Tag, ChevronRight, Check, Zap, FileText, Share2, Copy, Download, ExternalLink, MessageCircle } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, doc } from 'firebase/firestore';
 import QRCode from 'qrcode';
+import LocationPickerModal from './LocationPickerModal';
 
 const NewPostForm = ({ onBack, onSubmit }) => {
     // 전단지 생성 시 사용될 임시 포스트 ID (QR 목적)
@@ -22,11 +24,14 @@ const NewPostForm = ({ onBack, onSubmit }) => {
         breed: '',
         features: '',
         reward: '',
-        contactPhone: ''
+        contactPhone: '',
+        // 추가: 모달에서 선택한 지도 좌표
+        selectedCoords: null
     });
 
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [showFlyerModal, setShowFlyerModal] = useState(false);
+    const [showMapPicker, setShowMapPicker] = useState(false); // 추가: 지도 모달 상태
     const [linkCopied, setLinkCopied] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const flyerRef = useRef(null);
@@ -689,21 +694,43 @@ const NewPostForm = ({ onBack, onSubmit }) => {
 
                     <div>
                         <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '6px' }}>발견 위치</label>
-                        <div style={{ position: 'relative' }}>
-                            <input
-                                type="text"
-                                placeholder="지도를 클릭하거나 주소를 입력하세요"
-                                value={formData.location}
-                                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                        <div style={{ position: 'relative', display: 'flex', gap: '8px' }}>
+                            <div style={{ position: 'relative', flex: 1 }}>
+                                <input
+                                    type="text"
+                                    placeholder="도로명/지번 주소를 입력하거나 지도를 선택하세요"
+                                    value={formData.location}
+                                    onChange={(e) => setFormData({ ...formData, location: e.target.value, selectedCoords: null })}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px 12px 12px 36px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--border)',
+                                        fontSize: '16px'
+                                    }}
+                                />
+                                <MapPin size={18} color="#999" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowMapPicker(true)}
                                 style={{
-                                    width: '100%',
-                                    padding: '12px 12px 12px 36px',
+                                    padding: '0 16px',
                                     borderRadius: '8px',
-                                    border: '1px solid var(--border)',
-                                    fontSize: '16px'
+                                    backgroundColor: '#E8F0FE',
+                                    color: '#1967D2',
+                                    border: 'none',
+                                    fontWeight: '600',
+                                    fontSize: '14px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap'
                                 }}
-                            />
-                            <MapPin size={18} color="#999" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                            >
+                                <MapPin size={16} /> 지도 선택
+                            </button>
                         </div>
                     </div>
 
@@ -1026,11 +1053,11 @@ const NewPostForm = ({ onBack, onSubmit }) => {
             </div>
 
             {/* 전단지 미리보기 모달 */}
-            {showFlyerModal && (
+            {showFlyerModal && createPortal(
                 <div style={{
-                    position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)',
-                    zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    padding: '20px', animation: 'fadeIn 0.2s ease'
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)',
+                    zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: '20px', animation: 'fadeIn 0.2s ease', backdropFilter: 'blur(3px)'
                 }}>
                     <div style={{
                         backgroundColor: 'white', borderRadius: '16px', width: '100%', maxWidth: '400px',
@@ -1382,7 +1409,8 @@ const NewPostForm = ({ onBack, onSubmit }) => {
                             </button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             <style>{`
@@ -1404,6 +1432,17 @@ const NewPostForm = ({ onBack, onSubmit }) => {
           to { opacity: 1; }
         }
       `}</style>
+      
+            {showMapPicker && (
+                <LocationPickerModal
+                    initialLocation={formData.selectedCoords}
+                    onClose={() => setShowMapPicker(false)}
+                    onSelect={(coords, address) => {
+                        setFormData({ ...formData, selectedCoords: coords, location: address });
+                        setShowMapPicker(false);
+                    }}
+                />
+            )}
         </div>
     );
 };

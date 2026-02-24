@@ -2,17 +2,35 @@ import React, { useState } from 'react';
 import {
     User, Award, Shield, Star, Zap, MapPin, Eye, Heart,
     Target, TrendingUp, ChevronRight, Lock, CheckCircle,
-    Crown, Medal, Flame, Compass, Search as SearchIcon, Clock, LogOut
+    Crown, Medal, Flame, Compass, Search as SearchIcon, Clock, LogOut, Edit2
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ActivityHistory from './ActivityHistory';
 import SettingsMenu from './SettingsMenu';
 
 const ProfilePage = ({ myTown }) => {
-    const { user, profile, isAnonymous, signOut, signInWithGoogle } = useAuth();
+    const { user, profile, isAnonymous, signOut, signInWithGoogle, updateProfile } = useAuth();
     const [activeTab, setActiveTab] = useState('badges');
     const [showActivity, setShowActivity] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+    const [isEditingName, setIsEditingName] = useState(false);
+    const [editNameValue, setEditNameValue] = useState('');
+
+    const handleSaveName = async () => {
+        const trimmed = editNameValue.trim();
+        if (!trimmed || trimmed === (profile?.nickname || user?.displayName || '사용자')) {
+            setIsEditingName(false);
+            return;
+        }
+        try {
+            await updateProfile({ nickname: trimmed });
+            setIsEditingName(false);
+        } catch (err) {
+            console.error('이름 변경 실패:', err);
+            alert('이름을 변경하는 중 오류가 발생했습니다.');
+        }
+    };
+
 
     // 비로그인(익명) 사용자인 경우 로그인 유도 화면
     if (isAnonymous) {
@@ -338,7 +356,32 @@ const ProfilePage = ({ myTown }) => {
                     </div>
 
                     <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '18px', fontWeight: '900' }}>{userProfile.nickname}</div>
+                        {isEditingName ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                <input 
+                                    type="text" 
+                                    value={editNameValue} 
+                                    onChange={(e) => setEditNameValue(e.target.value)} 
+                                    onKeyDown={(e) => { if (e.key === 'Enter') handleSaveName(); }}
+                                    style={{ 
+                                        padding: '4px 8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.5)', 
+                                        background: 'rgba(0,0,0,0.2)', color: 'white', fontSize: '16px', fontWeight: '900', 
+                                        width: '120px', outline: 'none' 
+                                    }}
+                                    autoFocus
+                                    maxLength={10}
+                                />
+                                <button type="button" onClick={handleSaveName} style={{ background: 'white', color: 'var(--primary)', border: 'none', borderRadius: '4px', padding: '4px 10px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>저장</button>
+                                <button type="button" onClick={() => setIsEditingName(false)} style={{ background: 'transparent', color: 'white', border: '1px solid rgba(255,255,255,0.5)', borderRadius: '4px', padding: '4px 8px', fontSize: '12px', cursor: 'pointer' }}>취소</button>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <div style={{ fontSize: '18px', fontWeight: '900' }}>{userProfile.nickname}</div>
+                                <button type="button" onClick={() => { setEditNameValue(userProfile.nickname); setIsEditingName(true); }} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.8)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                                    <Edit2 size={14} />
+                                </button>
+                            </div>
+                        )}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', opacity: 0.85, marginTop: '2px' }}>
                             <MapPin size={12} /> {userProfile.town}
                         </div>

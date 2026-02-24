@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Map, Search, PlusCircle, Bell, User, MapPin, Grid, MessageCircle, Settings, MessageSquare, Zap, ShieldCheck, Award, Edit3, LogOut, Trash2, CheckSquare, Square, X, CheckCircle, Heart, Eye, Share2 } from 'lucide-react'
 import NewPostForm from './components/NewPostForm'
 import CommunityBoard from './components/CommunityBoard'
@@ -41,6 +41,93 @@ function App() {
     const [comments, setComments] = useState([])
     const [newComment, setNewComment] = useState('')
     const [likedComments, setLikedComments] = useState(new Set()) // 좋아요한 댓글 ID
+
+    // ==========================================
+    // 스마트폰 뒤로 가기(History API) 동기화 로직
+    // ==========================================
+    const getActiveHash = () => {
+        if (confirmAction) return '#confirm';
+        if (showAdminGenerator) return '#admin';
+        if (showChat) return '#chat';
+        if (showPostDetail) return '#detail';
+        if (showForm) return '#form';
+        if (showSettings) return '#settings';
+        return `#${mainView}`;
+    };
+
+    const activeHash = getActiveHash();
+    const isPopStateAction = useRef(false);
+    const prevActiveHash = useRef(activeHash);
+
+    useEffect(() => {
+        if (!window.location.hash) {
+            window.history.replaceState(null, '', activeHash);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (isPopStateAction.current) {
+            isPopStateAction.current = false;
+            prevActiveHash.current = activeHash;
+            return;
+        }
+        const currentHash = window.location.hash || `#${mainView}`;
+        if (activeHash !== currentHash) {
+            const views = ['#feed', '#community', '#map', '#profile'];
+            // 팝업이 UI 상에서 명시적으로 닫혔을 때 (하위 스택으로 이동 시)
+            if (views.includes(activeHash) && !views.includes(prevActiveHash.current)) {
+                window.history.replaceState(null, '', activeHash);
+            } else {
+                window.history.pushState(null, '', activeHash);
+            }
+        }
+        prevActiveHash.current = activeHash;
+    }, [activeHash, mainView]);
+
+    useEffect(() => {
+        const handlePopState = () => {
+            isPopStateAction.current = true;
+            const hash = window.location.hash || '#feed';
+            if (hash === '#confirm') {
+                // do nothing
+            } else if (hash === '#admin') {
+                setConfirmAction(null);
+            } else if (hash === '#chat') {
+                setConfirmAction(null);
+                setShowAdminGenerator(false);
+            } else if (hash === '#detail') {
+                setConfirmAction(null);
+                setShowAdminGenerator(false);
+                setShowChat(null);
+            } else if (hash === '#form') {
+                setConfirmAction(null);
+                setShowAdminGenerator(false);
+                setShowChat(null);
+                setShowPostDetail(null);
+            } else if (hash === '#settings') {
+                setConfirmAction(null);
+                setShowAdminGenerator(false);
+                setShowChat(null);
+                setShowPostDetail(null);
+                setShowForm(false);
+            } else {
+                // 메인 뷰 계열일 때 모든 팝업 닫기
+                setConfirmAction(null);
+                setShowAdminGenerator(false);
+                setShowChat(null);
+                setShowPostDetail(null);
+                setShowForm(false);
+                setShowSettings(false);
+                const view = hash.replace('#', '');
+                if (['feed', 'community', 'map', 'profile'].includes(view)) {
+                    setMainView(view);
+                }
+            }
+        };
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, []);
+    // ==========================================
 
     // 날짜시간 포맷 함수
     const formatDateTime = (dateInput) => {
@@ -145,6 +232,25 @@ function App() {
                 }
             }
 
+            // 위치 위도/경도 결정 (사용자 선택 우선 -> 역지오코딩 -> 기본값)
+            let finalLat = 37.5007; // 기본값 (서울 강남)
+            let finalLng = 127.0365;
+
+            if (newPost.selectedCoords) {
+                finalLat = newPost.selectedCoords.lat;
+                finalLng = newPost.selectedCoords.lng;
+            } else if (newPost.location) {
+                try {
+                    // 동적 임포트로 publicDataService 불러오기
+                    const { publicDataService } = await import('./services/publicDataService');
+                    const coords = await publicDataService.geocodeAddress(newPost.location);
+                    finalLat = coords.lat;
+                    finalLng = coords.lng;
+                } catch (e) {
+                    console.warn('Geocoding failed for text location', e);
+                }
+            }
+
             const postToSave = {
                 type: newPost.type || 'LOST',
                 category: newPost.category || 'PET',
@@ -159,8 +265,8 @@ function App() {
                 authorAngelLevel: profile?.angelLevel || 1,
                 imageUrl: uploadedImageUrls[0] || null,
                 images: uploadedImageUrls,
-                lat: 37.5007 + (Math.random() - 0.5) * 0.02,
-                lng: 127.0365 + (Math.random() - 0.5) * 0.02,
+                lat: finalLat,
+                lng: finalLng,
                 views: 0,
                 likes: 0,
                 comments: 0,
@@ -483,6 +589,82 @@ function App() {
                                 </button>
                             ))}
                         </div>
+
+                        {/* 최신 제보 (히어로 슬라이더) */}
+                        {filteredPosts.length > 0 && (
+                            <div style={{ padding: '0 0 24px 0' }}>
+                                <h2 style={{ padding: '0 20px', fontSize: '18px', fontWeight: '800', marginBottom: '14px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <Zap size={20} color="var(--secondary)" fill="var(--secondary)" /> 
+                                    최신 급상승 제보
+                                </h2>
+                                <div className="hide-scroll" style={{ 
+                                    display: 'flex', 
+                                    overflowX: 'auto', 
+                                    scrollSnapType: 'x mandatory', 
+                                    gap: '14px', 
+                                    padding: '0 20px', 
+                                    scrollbarWidth: 'none', 
+                                    msOverflowStyle: 'none' 
+                                }}>
+                                    <style>{`.hide-scroll::-webkit-scrollbar { display: none; }`}</style>
+                                    {filteredPosts.slice(0, 10).map(post => (
+                                        <div key={`hero-${post.id}`} 
+                                             style={{ 
+                                                 minWidth: '280px', 
+                                                 height: '180px', 
+                                                 scrollSnapAlign: 'start',
+                                                 borderRadius: '16px',
+                                                 overflow: 'hidden',
+                                                 position: 'relative',
+                                                 backgroundColor: '#f5f5f5',
+                                                 boxShadow: '0 6px 16px rgba(0,0,0,0.12)',
+                                                 flexShrink: 0,
+                                                 cursor: 'pointer'
+                                             }}
+                                             onClick={(e) => {
+                                                 e.stopPropagation();
+                                                 openPostDetail(post);
+                                             }}
+                                        >
+                                            <div style={{ 
+                                                position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+                                                backgroundImage: `url(${post.imageUrl || '/api/placeholder/400/300'})`,
+                                                backgroundSize: 'cover', backgroundPosition: 'center',
+                                                filter: post.status === 'RETURNED' ? 'grayscale(100%)' : 'none'
+                                            }} />
+                                            {/* Gradient Overlay */}
+                                            <div style={{ 
+                                                position: 'absolute', bottom: 0, left: 0, width: '100%', height: '70%',
+                                                background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 50%, transparent 100%)'
+                                            }} />
+                                            
+                                            <div style={{ position: 'absolute', top: '14px', left: '14px', display: 'flex', gap: '6px' }}>
+                                                {post.status === 'RETURNED' && (
+                                                    <span style={{ backgroundColor: '#4CAF50', color: 'white', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '800' }}>✅ 종료</span>
+                                                )}
+                                                <span style={{
+                                                    backgroundColor: post.type === 'LOST' ? 'var(--secondary)' : '#4CAF50',
+                                                    color: 'white', padding: '4px 10px', borderRadius: '12px',
+                                                    fontSize: '11px', fontWeight: '800',
+                                                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                                                }}>
+                                                    {post.type === 'LOST' ? '분실/실종' : '습득/보호'}
+                                                </span>
+                                            </div>
+                                            
+                                            <div style={{ position: 'absolute', bottom: '16px', left: '16px', right: '16px', color: 'white' }}>
+                                                <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '6px', textShadow: '0 2px 4px rgba(0,0,0,0.6)', lineHeight: '1.3' }}>
+                                                    {post.title && post.title.length > 25 ? post.title.slice(0, 25) + '...' : (post.title || '제목 없음')}
+                                                </h3>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', opacity: 0.95, textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+                                                    <MapPin size={12} /> {post.location || '위치 미상'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         <div style={{ padding: '0 20px 20px 20px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
