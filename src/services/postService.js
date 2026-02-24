@@ -18,19 +18,26 @@ import {
 const COLLECTION_NAME = 'posts';
 
 export const postService = {
-    // 게시물 등록
-    async createPost(postData) {
+    // 게시물 등록 (tempId 지원)
+    async createPost(postData, predefinedId = null) {
         try {
             if (!postData.uid) throw new Error("User ID is required");
 
-            const docRef = await addDoc(collection(db, COLLECTION_NAME), {
+            const docData = {
                 ...postData,
                 createdAt: serverTimestamp(),
                 status: 'ACTIVE',
                 views: 0,
                 likes: 0
-            });
-            return docRef.id;
+            };
+
+            if (predefinedId) {
+                await setDoc(doc(db, COLLECTION_NAME, predefinedId), docData);
+                return predefinedId;
+            } else {
+                const docRef = await addDoc(collection(db, COLLECTION_NAME), docData);
+                return docRef.id;
+            }
         } catch (error) {
             console.error("Error adding document: ", error);
             throw error;
@@ -119,5 +126,32 @@ export const postService = {
     async incrementComments(postId) {
         const postRef = doc(db, COLLECTION_NAME, postId);
         await updateDoc(postRef, { comments: increment(1) });
+    },
+
+    // 사용자가 작성한 메인 피드 목록 가져오기 (단발성)
+    async getUserPosts(uid) {
+        if (!uid) return [];
+        try {
+            const { getDocs } = await import('firebase/firestore');
+            const q = query(
+                collection(db, COLLECTION_NAME),
+                where('uid', '==', uid),
+                orderBy('createdAt', 'desc')
+            );
+            const snapshot = await getDocs(q);
+            return snapshot.docs.map(docSnap => {
+                const data = docSnap.data();
+                return {
+                    id: docSnap.id,
+                    ...data,
+                    createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : new Date(),
+                    tags: Array.isArray(data.tags) ? data.tags : [],
+                    imageUrl: data.imageUrl || 'https://via.placeholder.com/400x300?text=No+Image'
+                };
+            });
+        } catch (error) {
+            console.error("Error fetching user posts: ", error);
+            return [];
+        }
     }
 };

@@ -1,7 +1,13 @@
 import React, { useState, useRef } from 'react';
 import { Camera, X, MapPin, Tag, ChevronRight, Check, Zap, FileText, Share2, Copy, Download, ExternalLink, MessageCircle } from 'lucide-react';
+import { db } from '../firebase';
+import { collection, doc } from 'firebase/firestore';
+import QRCode from 'qrcode';
 
 const NewPostForm = ({ onBack, onSubmit }) => {
+    // 전단지 생성 시 사용될 임시 포스트 ID (QR 목적)
+    const [tempPostId] = useState(() => doc(collection(db, 'posts')).id);
+
     const [formData, setFormData] = useState({
         type: 'LOST',
         category: 'PET',
@@ -106,7 +112,7 @@ const NewPostForm = ({ onBack, onSubmit }) => {
         window.open(url, '_blank', 'width=600,height=400');
     };
 
-    const handleDownloadFlyer = () => {
+    const handleDownloadFlyer = async () => {
         if (!flyerRef.current) return;
 
         const W = 600;
@@ -378,7 +384,7 @@ const NewPostForm = ({ onBack, onSubmit }) => {
         }
 
         // ──────────────────────────────
-        // QR 코드
+        // 실전 QR 코드 (tempPostId 연동)
         // ──────────────────────────────
         // 항상 하단에 배치 (최소 위치 보장)
         y = Math.max(y + 8, H - 78);
@@ -392,25 +398,25 @@ const NewPostForm = ({ onBack, onSubmit }) => {
         ctx.stroke();
         y += 14;
 
-        // QR 코드 시뮬레이션 (7x7 격자)
         const qrX = PAD;
         const qrSize = 50;
-        ctx.strokeStyle = '#333';
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(qrX, y, qrSize, qrSize);
 
-        const gridCells = 7;
-        const gridCellSize = (qrSize - 6) / gridCells;
-        for (let r = 0; r < gridCells; r++) {
-            for (let c = 0; c < gridCells; c++) {
-                const isCorner = (r < 3 && c < 3) || (r < 3 && c > 3) || (r > 3 && c < 3);
-                const isCenter = r === 3 && c === 3;
-                if (isCorner || isCenter || ((r * 7 + c) % 3 === 0)) {
-                    ctx.fillStyle = '#333';
-                    ctx.fillRect(qrX + 3 + c * gridCellSize, y + 3 + r * gridCellSize,
-                        gridCellSize - 1, gridCellSize - 1);
-                }
-            }
+        try {
+            const shareUrl = `${window.location.origin}/?postId=${tempPostId}`;
+            const qrDataUrl = await QRCode.toDataURL(shareUrl, { margin: 1, width: qrSize * 2, color: { dark: '#333333ff', light: '#00000000' } });
+            const qrImg = new Image();
+            await new Promise((resolve) => {
+                qrImg.onload = resolve;
+                qrImg.onerror = resolve;
+                qrImg.src = qrDataUrl;
+            });
+            ctx.drawImage(qrImg, qrX, y, qrSize, qrSize);
+        } catch (err) {
+            console.error('QR생성 실패', err);
+            // Fallback: 빈 네모 박스
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(qrX, y, qrSize, qrSize);
         }
 
         // QR 옆 텍스트
@@ -429,39 +435,49 @@ const NewPostForm = ({ onBack, onSubmit }) => {
         // ──────────────────────────────
         // 이미지 그리기 & 다운로드
         // ──────────────────────────────
-        const doDownload = () => {
-            const link = document.createElement('a');
-            link.download = 'returnpot-flyer.png';
-            link.href = canvas.toDataURL('image/png');
-            link.click();
+        const generateImageAndDownload = async () => {
+            const doDownload = () => {
+                const link = document.createElement('a');
+                // 다운로드 파일명 지정 로직
+                const safeName = (formData.petName || formData.title || '제보').replace(/[/\\?%*:|"<>]/g, '-');
+                link.download = `returnpot_${safeName}_전단지.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            };
+
+            if (formData.images[0]) {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                await new Promise((resolve) => {
+                    img.onload = () => {
+                        ctx.save();
+                        roundRect(ctx, photoX, photoY, photoW, photoH, 6);
+                        ctx.clip();
+                        // object-fit: cover 방식
+                        const imgR = img.width / img.height;
+                        const boxR = photoW / photoH;
+                        let sx = 0, sy = 0, sw = img.width, sh = img.height;
+                        if (imgR > boxR) {
+                            sw = img.height * boxR;
+                            sx = (img.width - sw) / 2;
+                        } else {
+                            sh = img.width / boxR;
+                            sy = (img.height - sh) / 2;
+                        }
+                        ctx.drawImage(img, sx, sy, sw, sh, photoX, photoY, photoW, photoH);
+                        ctx.restore();
+                        resolve();
+                    };
+                    img.onerror = resolve;
+                    img.src = formData.images[0];
+                });
+            }
+            // 최종 다운로드 수행 (내용이 캔버스에 모두 그려진 상태)
+            doDownload();
         };
 
-        if (formData.images[0]) {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = () => {
-                ctx.save();
-                roundRect(ctx, photoX, photoY, photoW, photoH, 6);
-                ctx.clip();
-                // object-fit: cover 방식
-                const imgR = img.width / img.height;
-                const boxR = photoW / photoH;
-                let sx = 0, sy = 0, sw = img.width, sh = img.height;
-                if (imgR > boxR) {
-                    sw = img.height * boxR;
-                    sx = (img.width - sw) / 2;
-                } else {
-                    sh = img.width / boxR;
-                    sy = (img.height - sh) / 2;
-                }
-                ctx.drawImage(img, sx, sy, sw, sh, photoX, photoY, photoW, photoH);
-                ctx.restore();
-                doDownload();
-            };
-            img.src = formData.images[0];
-        } else {
-            doDownload();
-        }
+        // 이미지 로딩 대기 후 다운로드 실행
+        await generateImageAndDownload();
     };
 
     // ── Canvas 헬퍼 함수 ──
@@ -992,7 +1008,7 @@ const NewPostForm = ({ onBack, onSubmit }) => {
                         if (isSubmitting) return;
                         setIsSubmitting(true);
                         try {
-                            await onSubmit(formData);
+                            await onSubmit(formData, tempPostId);
                         } finally {
                             setIsSubmitting(false);
                         }
@@ -1012,7 +1028,7 @@ const NewPostForm = ({ onBack, onSubmit }) => {
             {/* 전단지 미리보기 모달 */}
             {showFlyerModal && (
                 <div style={{
-                    position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)',
+                    position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)',
                     zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center',
                     padding: '20px', animation: 'fadeIn 0.2s ease'
                 }}>

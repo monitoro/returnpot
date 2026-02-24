@@ -140,6 +140,27 @@ replies는 ${replyCount}개를 생성해주세요.
         }
     },
 
+    /**
+     * 특정 동네(행정동/법정동) 기준 주변 동네 5곳 이상 추출
+     */
+    async getNearbyTowns(townName) {
+        const prompt = `당신은 지리 정보 AI입니다. 한국의 "${townName}" 주변에 인접해 있는 행정동 또는 법정동(근처 동네) 5~8곳의 이름을 JSON 배열 형태로만 응답해주세요.
+반드시 아래 JSON 형식으로만 응답 (마크다운 백틱이나 다른 텍스트 없이):
+[
+  "동이름1", "동이름2", "동이름3", "동이름4", "동이름5"
+]`;
+
+        const raw = await callGemini(prompt);
+        try {
+            const jsonMatch = raw.match(/\[[\s\S]*\]/);
+            if (!jsonMatch) throw new Error('JSON array not found');
+            return JSON.parse(jsonMatch[0]);
+        } catch {
+            console.error('주변 동네 응답 파싱 실패:', raw);
+            throw new Error('주변 동네 탐색 실패');
+        }
+    },
+
     // API 호출 간 안전 딜레이 (외부에서 사용)
     delay
 };

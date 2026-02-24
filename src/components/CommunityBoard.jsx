@@ -35,6 +35,12 @@ const CommunityBoard = ({ formatDateTime, isAnonymous, signOut, isAdmin }) => {
     const [selectMode, setSelectMode] = useState(false);
     const [selectedPosts, setSelectedPosts] = useState(new Set());
 
+    // 상세보기 팝업 관련 상태
+    const [selectedDetailPost, setSelectedDetailPost] = useState(null);
+    const [comments, setComments] = useState([]);
+    const [newComment, setNewComment] = useState('');
+    const [likedComments, setLikedComments] = useState(new Set());
+
     const categories = ['전체', '자유게시판', '목격제보', '실종방지팁', '찾았어요!'];
 
     // Firestore 실시간 구독
@@ -45,6 +51,18 @@ const CommunityBoard = ({ formatDateTime, isAnonymous, signOut, isAdmin }) => {
         });
         return () => unsubscribe();
     }, []);
+
+    // 커뮤니티 게시글 댓글 구독
+    useEffect(() => {
+        if (!selectedDetailPost) {
+            setComments([]);
+            return;
+        }
+        const unsubscribe = communityService.subscribeComments(selectedDetailPost.id, (fetched) => {
+            setComments(fetched);
+        });
+        return () => unsubscribe();
+    }, [selectedDetailPost]);
 
     const filteredPosts = activeCategory === '전체'
         ? posts
@@ -57,6 +75,42 @@ const CommunityBoard = ({ formatDateTime, isAnonymous, signOut, isAdmin }) => {
             await communityService.toggleLike(postId, post.likes, post.liked);
         } catch (err) {
             console.error('좋아요 실패:', err);
+        }
+    };
+
+    // 댓글 전송
+    const handleCommentSubmit = async (postId) => {
+        if (!newComment.trim() || isAnonymous || !user) return;
+        try {
+            await communityService.sendComment(postId, {
+                uid: user.uid,
+                senderName: profile?.nickname || '익명',
+                text: newComment.trim()
+            });
+            await communityService.incrementComments(postId);
+            setNewComment('');
+        } catch (err) {
+            console.error('댓글 작성 실패:', err);
+            alert('댓글 작성에 실패했습니다.');
+        }
+    };
+
+    // 댓글 좋아요 토글
+    const handleCommentLike = async (postId, commentId) => {
+        if (isAnonymous || !user) {
+            alert('좋아요는 로그인이 필요합니다.');
+            return;
+        }
+        try {
+            const isNowLiked = await communityService.toggleCommentLike(postId, commentId, user.uid);
+            setLikedComments(prev => {
+                const next = new Set(prev);
+                if (isNowLiked) next.add(commentId);
+                else next.delete(commentId);
+                return next;
+            });
+        } catch (err) {
+            console.error('댓글 좋아요 실패:', err);
         }
     };
 
@@ -366,10 +420,11 @@ const CommunityBoard = ({ formatDateTime, isAnonymous, signOut, isAdmin }) => {
             {/* Post List */}
             <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {filteredPosts.map(post => (
-                    <div key={post.id} className="premium-card" style={{
+                    <div key={post.id} className="premium-card" onClick={() => !selectMode && setSelectedDetailPost(post)} style={{
                         padding: '14px',
                         border: selectMode && selectedPosts.has(post.id) ? '2px solid #e53935' : undefined,
-                        position: 'relative'
+                        position: 'relative',
+                        cursor: selectMode ? 'default' : 'pointer'
                     }}>
                         {/* 선택모드 체크박스 */}
                         {selectMode && (
@@ -426,7 +481,9 @@ const CommunityBoard = ({ formatDateTime, isAnonymous, signOut, isAdmin }) => {
                             borderTop: '1px solid var(--border)', paddingTop: '10px'
                         }}>
                             <button
-                                onClick={() => {
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
                                     if (isAnonymous) {
                                         alert("좋아요는 로그인이 필요합니다.\n로그인 화면으로 이동합니다.");
                                         signOut();
@@ -444,14 +501,14 @@ const CommunityBoard = ({ formatDateTime, isAnonymous, signOut, isAdmin }) => {
                             >
                                 <Heart size={16} fill={post.liked ? '#E74C3C' : 'none'} /> {post.likes}
                             </button>
-                            <button style={{
+                            <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedDetailPost(post); }} style={{
                                 display: 'flex', alignItems: 'center', gap: '4px',
                                 backgroundColor: 'transparent', border: 'none',
                                 color: 'var(--text-light)', cursor: 'pointer', fontSize: '13px'
                             }}>
                                 <MessageSquare size={16} /> {post.comments}
                             </button>
-                            <button style={{
+                            <button type="button" onClick={(e) => e.stopPropagation()} style={{
                                 display: 'flex', alignItems: 'center', gap: '4px',
                                 backgroundColor: 'transparent', border: 'none',
                                 color: 'var(--text-light)', marginLeft: 'auto', cursor: 'pointer'
@@ -461,7 +518,7 @@ const CommunityBoard = ({ formatDateTime, isAnonymous, signOut, isAdmin }) => {
                             {isAdmin && !selectMode && (
                                 <button
                                     type="button"
-                                    onClick={() => handleDeletePost(post.id)}
+                                    onClick={(e) => { e.stopPropagation(); handleDeletePost(post.id); }}
                                     style={{
                                         display: 'flex', alignItems: 'center', gap: '3px',
                                         backgroundColor: '#FFEBEE', border: '1px solid #e53935',
@@ -713,6 +770,182 @@ const CommunityBoard = ({ formatDateTime, isAnonymous, signOut, isAdmin }) => {
                     </div>
                 </div>
             )}
+
+            {/* 게시글 상세보기 (댓글/좋아요) 팝업 */}
+            {selectedDetailPost && (() => {
+                const post = selectedDetailPost;
+                return (
+                    <div style={{
+                        position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)',
+                        width: '100%', maxWidth: '480px', bottom: 0,
+                        backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1100,
+                        display: 'flex', alignItems: 'flex-end', justifyContent: 'center'
+                    }} onClick={() => setSelectedDetailPost(null)}>
+                        <div style={{
+                            width: '100%', maxWidth: '500px', maxHeight: '90vh',
+                            backgroundColor: 'white', borderRadius: '20px 20px 0 0',
+                            display: 'flex', flexDirection: 'column',
+                            overflow: 'hidden', padding: 0
+                        }} onClick={(e) => e.stopPropagation()}>
+                            {/* 고정 헤더 */}
+                            <div style={{ flexShrink: 0, backgroundColor: 'white', zIndex: 10, paddingBottom: '4px' }}>
+                                <div style={{ padding: '12px 0 4px', display: 'flex', justifyContent: 'center' }}>
+                                    <div style={{ width: '40px', height: '4px', borderRadius: '2px', backgroundColor: '#ddd' }} />
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 16px' }}>
+                                    <button type="button" onClick={() => setSelectedDetailPost(null)}
+                                        style={{ border: 'none', background: 'none', cursor: 'pointer', padding: '4px' }}>
+                                        <X size={22} color="#999" />
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            {/* 스크롤 본문 */}
+                            <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '20px' }}>
+                                <div style={{ padding: '20px' }}>
+                                    {/* 작성자 정보 */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+                                        <div style={{
+                                            width: '32px', height: '32px', borderRadius: '16px',
+                                            backgroundColor: 'var(--primary-light)',
+                                            display: 'flex', justifyContent: 'center', alignItems: 'center'
+                                        }}>
+                                            <User size={16} color="var(--primary)" />
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '13px', fontWeight: '700' }}>{post.author}</div>
+                                            {/* displayTime 헬퍼가 없으므로 formatDateTime 사용 */}
+                                            <div style={{ fontSize: '11px', color: 'var(--text-light)' }}>{formatDateTime(post.createdAt)} · {post.category}</div>
+                                        </div>
+                                    </div>
+
+                                    {/* 본문 내용 */}
+                                    <div style={{ fontSize: '15px', lineHeight: '1.6', marginBottom: '16px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#222' }}>
+                                        {post.content}
+                                    </div>
+
+                                    {/* 이미지 및 링크 */}
+                                    <ImageGrid images={post.images} />
+                                    <LinkPreview url={post.linkUrl} />
+
+                                    {/* 본문 액션 */}
+                                    <div style={{
+                                        display: 'flex', gap: '16px', marginTop: '20px',
+                                        paddingTop: '16px', borderTop: '1px solid var(--border)'
+                                    }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (isAnonymous) {
+                                                    alert("좋아요는 로그인이 필요합니다.\n로그인 화면으로 이동합니다.");
+                                                    signOut();
+                                                    return;
+                                                }
+                                                handleLike(post.id);
+                                            }}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', gap: '6px',
+                                                backgroundColor: 'transparent', border: 'none',
+                                                color: post.liked ? '#E74C3C' : 'var(--text-light)',
+                                                cursor: 'pointer', fontSize: '14px',
+                                                fontWeight: post.liked ? '700' : '500'
+                                            }}
+                                        >
+                                            <Heart size={18} fill={post.liked ? '#E74C3C' : 'none'} /> 좋아요 {post.likes}
+                                        </button>
+                                        <div style={{
+                                            display: 'flex', alignItems: 'center', gap: '6px',
+                                            color: 'var(--text-light)', fontSize: '14px', fontWeight: '500'
+                                        }}>
+                                            <MessageSquare size={18} /> 댓글 {post.comments || 0}
+                                        </div>
+                                    </div>
+
+                                    {/* 댓글 리스트 */}
+                                    <div style={{ marginTop: '24px' }}>
+                                        <h3 style={{ fontSize: '16px', fontWeight: '800', marginBottom: '16px' }}>댓글</h3>
+                                        {comments.length === 0 ? (
+                                            <div style={{ textAlign: 'center', padding: '30px 0', color: '#999', fontSize: '14px', backgroundColor: '#f9f9f9', borderRadius: '12px' }}>
+                                                가장 먼저 이웃에게 댓글을 남겨주세요!
+                                            </div>
+                                        ) : (
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                                {comments.map(c => (
+                                                    <div key={c.id} style={{ display: 'flex', gap: '10px' }}>
+                                                        <div style={{
+                                                            width: '32px', height: '32px', borderRadius: '16px',
+                                                            backgroundColor: '#e6efff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                                        }}>
+                                                            <User size={16} color="#0052cc" />
+                                                        </div>
+                                                        <div style={{ flex: 1 }}>
+                                                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                                                                <span style={{ fontSize: '13px', fontWeight: '700', color: '#333' }}>{c.senderName}</span>
+                                                                <span style={{ fontSize: '11px', color: '#999' }}>{formatDateTime(c.createdAt)}</span>
+                                                            </div>
+                                                            <div style={{ fontSize: '14px', color: '#444', marginTop: '4px', lineHeight: '1.4', wordBreak: 'break-all' }}>
+                                                                {c.text}
+                                                            </div>
+                                                            <div style={{ marginTop: '6px' }}>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleCommentLike(post.id, c.id)}
+                                                                    style={{
+                                                                        background: 'none', border: 'none', padding: 0,
+                                                                        display: 'flex', alignItems: 'center', gap: '4px',
+                                                                        color: likedComments.has(c.id) ? '#e53935' : '#aaa',
+                                                                        fontSize: '12px', fontWeight: '600', cursor: 'pointer'
+                                                                    }}>
+                                                                    <Heart size={12} fill={likedComments.has(c.id) ? '#e53935' : 'none'} />
+                                                                    좋아요 {c.likes || 0}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* 고정 댓글 입력창 */}
+                            <div style={{
+                                flexShrink: 0, padding: '12px 16px',
+                                paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+                                backgroundColor: 'white', borderTop: '1px solid #eee'
+                            }}>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                                    <textarea
+                                        value={newComment}
+                                        onChange={(e) => setNewComment(e.target.value)}
+                                        placeholder={isAnonymous ? "로그인 후 댓글을 남겨보세요." : "이웃에게 따뜻한 댓글을 남겨주세요."}
+                                        disabled={isAnonymous}
+                                        style={{
+                                            flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #e0e0e0',
+                                            fontSize: '14px', resize: 'none', minHeight: '44px',
+                                            backgroundColor: isAnonymous ? '#f5f5f5' : 'white'
+                                        }}
+                                        rows={1}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCommentSubmit(post.id)}
+                                        disabled={!newComment.trim() || isAnonymous}
+                                        style={{
+                                            padding: '12px', borderRadius: '12px', border: 'none',
+                                            backgroundColor: !newComment.trim() || isAnonymous ? '#e0e0e0' : 'var(--primary)',
+                                            color: 'white', cursor: !newComment.trim() || isAnonymous ? 'not-allowed' : 'pointer',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                        }}>
+                                        <Send size={18} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             <style>{`
                 @keyframes slideUp {

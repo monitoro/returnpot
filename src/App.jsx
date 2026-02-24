@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Map, Search, PlusCircle, Bell, User, MapPin, Grid, MessageCircle, Settings, MessageSquare, Zap, ShieldCheck, Award, Edit3, LogOut, Trash2, CheckSquare, Square, X, CheckCircle, Heart, Eye } from 'lucide-react'
+import { Map, Search, PlusCircle, Bell, User, MapPin, Grid, MessageCircle, Settings, MessageSquare, Zap, ShieldCheck, Award, Edit3, LogOut, Trash2, CheckSquare, Square, X, CheckCircle, Heart, Eye, Share2 } from 'lucide-react'
 import NewPostForm from './components/NewPostForm'
 import CommunityBoard from './components/CommunityBoard'
 import ChatRoom from './components/ChatRoom'
@@ -96,7 +96,36 @@ function App() {
 
     const filteredPosts = posts.filter(p => categoryFilter === 'ALL' || p.category === categoryFilter);
 
-    const handleCreatePost = async (newPost) => {
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const urlPostId = params.get('postId');
+        if (urlPostId) {
+            postService.getPost(urlPostId).then(post => {
+                if (post) {
+                    setShowPostDetail(post);
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                }
+            }).catch(console.error);
+        }
+    }, []);
+
+    const handleShare = (e, post) => {
+        if (e) e.stopPropagation();
+        const shareUrl = `${window.location.origin}/?postId=${post.id}`;
+        if (navigator.share) {
+            navigator.share({
+                title: post.title || '제보',
+                text: post.description ? post.description.slice(0, 50) + '...' : '도움을 주세요.',
+                url: shareUrl,
+            }).catch(console.error);
+        } else {
+            navigator.clipboard.writeText(shareUrl).then(() => {
+                alert('공유 링크가 클립보드에 복사되었습니다.');
+            });
+        }
+    };
+
+    const handleCreatePost = async (newPost, tempPostId) => {
         if (!user) {
             alert("로그인이 필요합니다.");
             return;
@@ -139,7 +168,7 @@ function App() {
                 aiMatchFound: false
             };
 
-            await postService.createPost(postToSave);
+            await postService.createPost(postToSave, tempPostId);
 
             // 통계 + 경험치 갱신
             try {
@@ -631,17 +660,29 @@ function App() {
                                                 <MapPin size={12} /> {post.location}
                                             </div>
 
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <div style={{ display: 'flex', gap: '8px' }}>
-                                                    {Array.isArray(post.tags) ? post.tags.slice(0, 3).map(tag => (
-                                                        <span key={tag} style={{ color: 'var(--primary)', fontSize: '11px', fontWeight: '600' }}>#{tag}</span>
-                                                    )) : null}
+                                            {Array.isArray(post.tags) && post.tags.length > 0 && (
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+                                                    {post.tags.slice(0, 3).map(tag => (
+                                                        <span key={tag} style={{ color: 'var(--primary)', fontSize: '11px', fontWeight: '600', backgroundColor: '#E3F2FD', padding: '4px 8px', borderRadius: '12px' }}>#{tag}</span>
+                                                    ))}
                                                 </div>
-                                                {!selectMode && (
-                                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-                                                        {/* 본인 게시물 의뢰종료 */}
-                                                        {isMyPost && !isReturned && (
-                                                            <button type="button" onClick={() => handleCloseCase(post.id)}
+                                            )}
+
+                                            {!selectMode && (
+                                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px', alignItems: 'center', marginTop: '8px' }} onClick={(e) => e.stopPropagation()}>
+                                                        <button type="button" onClick={(e) => handleShare(e, post)}
+                                                            style={{
+                                                                padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '3px',
+                                                                fontSize: '11px', fontWeight: '700', borderRadius: '6px',
+                                                                border: '1px solid #E3F2FD', backgroundColor: '#E3F2FD',
+                                                                color: '#1976D2', cursor: 'pointer'
+                                                            }}
+                                                        >
+                                                            <Share2 size={12} /> 공유
+                                                        </button>
+                                                        {/* 관리자 또는 본인 게시물 의뢰종료 */}
+                                                        {(isMyPost || isAdmin) && !isReturned && (
+                                                            <button type="button" onClick={(e) => { e.stopPropagation(); handleCloseCase(post.id); }}
                                                                 style={{
                                                                     padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '3px',
                                                                     fontSize: '11px', fontWeight: '700', borderRadius: '6px',
@@ -672,9 +713,8 @@ function App() {
                                                                 <MessageSquare size={14} /> 제보
                                                             </button>
                                                         )}
-                                                    </div>
-                                                )}
-                                            </div>
+                                                </div>
+                                            )}
                                         </div>
                                         {/* 통계: 좋아요·조회수·댓글 */}
                                         <div style={{
@@ -704,7 +744,7 @@ function App() {
                 )}
 
                 {mainView === 'map' && (
-                    <MapView posts={filteredPosts} formatDateTime={formatDateTime} />
+                    <MapView posts={filteredPosts} formatDateTime={formatDateTime} onShowChat={setShowChat} />
                 )}
 
                 {mainView === 'community' && (
@@ -734,7 +774,7 @@ function App() {
                 const isMyPost = user && post.uid === user.uid;
                 return (
                 <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', bottom: 0,
                     backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1100,
                     display: 'flex', alignItems: 'flex-end', justifyContent: 'center'
                 }} onClick={closePostDetail}>
@@ -912,7 +952,16 @@ function App() {
                                     <Heart size={16} fill={likedPosts.has(post.id) ? '#e53935' : 'none'} />
                                     {post.likes || 0}
                                 </button>
-                                {isMyPost && !isReturned && (
+                                <button type="button" onClick={(e) => handleShare(e, post)}
+                                                            style={{
+                                                                flex: 1, padding: '12px', borderRadius: '12px', border: 'none',
+                                                                backgroundColor: '#E3F2FD', color: '#1976D2',
+                                                                fontSize: '14px', fontWeight: '700', cursor: 'pointer',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                                                            }}>
+                                                            <Share2 size={16} /> 공유
+                                                        </button>
+                                {(isMyPost || isAdmin) && !isReturned && (
                                     <button type="button" onClick={() => { handleCloseCase(post.id); closePostDetail(); }}
                                         style={{
                                             flex: 1, padding: '12px', borderRadius: '12px', border: 'none',
@@ -1138,7 +1187,7 @@ function App() {
             {/* 커스텀 확인 팝업 (window.confirm 대체) */}
             {confirmAction && (
                 <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', bottom: 0,
                     backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999,
                     display: 'flex', alignItems: 'center', justifyContent: 'center'
                 }} onClick={() => setConfirmAction(null)}>

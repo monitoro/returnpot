@@ -5,10 +5,14 @@ import {
     Crown, Medal, Flame, Compass, Search as SearchIcon, Clock, LogOut
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import ActivityHistory from './ActivityHistory';
+import SettingsMenu from './SettingsMenu';
 
 const ProfilePage = ({ myTown }) => {
     const { user, profile, isAnonymous, signOut, signInWithGoogle } = useAuth();
     const [activeTab, setActiveTab] = useState('badges');
+    const [showActivity, setShowActivity] = useState(false);
+    const [showSettings, setShowSettings] = useState(false);
 
     // 비로그인(익명) 사용자인 경우 로그인 유도 화면
     if (isAnonymous) {
@@ -687,53 +691,53 @@ const ProfilePage = ({ myTown }) => {
             )}
 
             {/* 하단 메뉴 */}
-            <div style={{ padding: '0 20px' }}>
-                {[
-                    { label: '활동 내역', desc: '나의 게시글과 제보 기록', icon: Clock },
-                    { label: '설정', desc: '알림 · 계정 · 개인정보', icon: Compass },
-                ].map((menu, i) => (
-                    <div key={i} style={{
-                        display: 'flex', alignItems: 'center', gap: '12px',
-                        padding: '14px 0',
-                        borderBottom: '1px solid var(--border)',
-                        cursor: 'pointer'
+            <div style={{ padding: '0 20px', marginBottom: '40px' }}>
+                <div onClick={() => setShowActivity(true)} style={{
+                    display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer'
+                }}>
+                    <div style={{
+                        width: '36px', height: '36px', borderRadius: '10px', backgroundColor: 'var(--primary-light)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
                     }}>
-                        <div style={{
-                            width: '36px', height: '36px', borderRadius: '10px',
-                            backgroundColor: 'var(--primary-light)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center'
-                        }}>
-                            <menu.icon size={18} color="var(--primary)" />
-                        </div>
-                        <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: '14px', fontWeight: '700' }}>{menu.label}</div>
-                            <div style={{ fontSize: '11px', color: 'var(--text-light)' }}>{menu.desc}</div>
-                        </div>
-                        <ChevronRight size={18} color="var(--text-light)" />
+                        <Clock size={18} color="var(--primary)" />
                     </div>
-                ))}
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '14px', fontWeight: '700' }}>활동 내역</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-light)' }}>나의 게시글과 제보 기록</div>
+                    </div>
+                    <ChevronRight size={18} color="var(--text-light)" />
+                </div>
+                
+                <div onClick={() => setShowSettings(true)} style={{
+                    display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 0', borderBottom: '1px solid var(--border)', cursor: 'pointer'
+                }}>
+                    <div style={{
+                        width: '36px', height: '36px', borderRadius: '10px', backgroundColor: 'var(--primary-light)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                        <Compass size={18} color="var(--primary)" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '14px', fontWeight: '700' }}>설정</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-light)' }}>알림 · 계정탈퇴 · 정보</div>
+                    </div>
+                    <ChevronRight size={18} color="var(--text-light)" />
+                </div>
             </div>
 
-            {/* 가입일 + 로그아웃 */}
-            <div style={{ padding: '20px', textAlign: 'center' }}>
-                <div style={{ fontSize: '12px', color: 'var(--text-light)', marginBottom: '16px' }}>
-                    가입일: {userProfile.joinDate} · {user?.email || '이메일 미설정'}
+            {/* 가입일 정보 (로그아웃은 설정으로 이동) */}
+            <div style={{ padding: '20px', textAlign: 'center', paddingBottom: '100px' }}>
+                <div style={{ fontSize: '12px', color: 'var(--text-light)', marginBottom: '8px' }}>
+                    가입일: {userProfile.joinDate}
                 </div>
-                <button
-                    type="button"
-                    onClick={signOut}
-                    style={{
-                        display: 'inline-flex', alignItems: 'center', gap: '6px',
-                        padding: '10px 24px', borderRadius: '10px',
-                        border: '1px solid #e0e0e0', backgroundColor: 'white',
-                        color: '#e53935', fontSize: '14px', fontWeight: '700',
-                        cursor: 'pointer'
-                    }}
-                >
-                    <LogOut size={16} />
-                    로그아웃
-                </button>
+                <div style={{ fontSize: '12px', color: 'var(--text-light)' }}>
+                    {user?.email || '이메일 정보 없음'}
+                </div>
             </div>
+
+            {/* Modals */}
+            {showActivity && <ActivityHistory onClose={() => setShowActivity(false)} />}
+            {showSettings && <SettingsMenu onClose={() => setShowSettings(false)} signOut={signOut} />}
         </div>
     );
 };

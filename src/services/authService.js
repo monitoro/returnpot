@@ -15,7 +15,8 @@ import {
     getDoc,
     setDoc,
     updateDoc,
-    serverTimestamp
+    serverTimestamp,
+    deleteDoc
 } from 'firebase/firestore';
 
 const USERS_COLLECTION = 'users';
@@ -143,6 +144,23 @@ export const authService = {
             await firebaseSignOut(auth);
         } catch (error) {
             console.error('로그아웃 실패:', error);
+            throw error;
+        }
+    },
+
+    // 회원 탈퇴
+    async deleteAccount(user) {
+        if (!user) throw new Error("User object is required");
+        try {
+            // 1. Firestore 프로필 삭제
+            const userRef = doc(db, USERS_COLLECTION, user.uid);
+            await deleteDoc(userRef);
+
+            // 2. Firebase Auth 계정 삭제
+            await user.delete();
+            return true;
+        } catch (error) {
+            console.error('회원 탈퇴 실패:', error);
             throw error;
         }
     },

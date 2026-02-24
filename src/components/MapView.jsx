@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { publicDataService } from '../services/publicDataService';
 
-const MapView = ({ posts = [], formatDateTime }) => {
+const MapView = ({ posts = [], formatDateTime, onShowChat }) => {
     const mapRef = useRef(null);
     const mapInstanceRef = useRef(null);
     const markersRef = useRef([]);
@@ -504,13 +504,15 @@ const MapView = ({ posts = [], formatDateTime }) => {
                     </div>
 
                     <div style={{ display: 'flex', gap: '8px' }}>
-                        <button type="button" style={{
-                            flex: 1, padding: '10px', borderRadius: '10px', border: 'none',
-                            backgroundColor: '#0052CC', color: 'white', fontWeight: '700', fontSize: '13px',
-                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
-                        }}>
-                            <MessageSquare size={16} /> 제보하기
-                        </button>
+                        {selectedPost.type !== 'public' && ( // 공공데이터는 제보 기능 제외
+                            <button type="button" onClick={() => onShowChat && onShowChat(selectedPost)} style={{
+                                flex: 1, padding: '10px', borderRadius: '10px', border: 'none',
+                                backgroundColor: '#0052CC', color: 'white', fontWeight: '700', fontSize: '13px',
+                                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+                            }}>
+                                <MessageSquare size={16} /> 제보하기
+                            </button>
+                        )}
                         {selectedPost.urgent && (
                             <button type="button" style={{
                                 padding: '10px 16px', borderRadius: '10px',
